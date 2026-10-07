@@ -2,6 +2,13 @@
 
 ## Current state
 
+**1.0.0 published 2026-10-07:**
+https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.0
+(GitHub Actions on tag `v1.0.0`: Windows zip and Linux tar.gz, both jobs
+green on the first run). Next: the maintainer smoke-tests the downloaded
+archives on both boxes; later work continues on `main` as `1.0.1.N` dev
+builds until the next release number is chosen.
+
 **1.0.0 (2026-10-07): first public release.** Tree = 0.0.0.27 + the L6
 Linux check (build, headless suite, portability review: notes only) + the
 public-repo scrub (no personal names, user paths or host names; test
