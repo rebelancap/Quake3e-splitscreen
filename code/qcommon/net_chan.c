@@ -54,9 +54,10 @@ cvar_t		*showpackets;
 cvar_t		*showdrop;
 cvar_t		*qport;
 
-static const char *netsrcString[2] = {
+static const char *netsrcString[NS_CLIENT_LAST + 1] = {
 	"client",
-	"server"
+	"server",
+	"client2", "client3", "client4", "client5", "client6", "client7", "client8"
 };
 
 /*
@@ -118,8 +119,8 @@ void Netchan_TransmitNextFragment( netchan_t *chan ) {
 	MSG_WriteLong( &send, outgoingSequence );
 
 	// send the qport if we are a client
-	if ( chan->sock == NS_CLIENT ) {
-		MSG_WriteShort( &send, qport->integer );
+	if ( chan->sock != NS_SERVER ) {
+		MSG_WriteShort( &send, chan->qport );
 	}
 
 	if ( !chan->compat )
@@ -181,8 +182,8 @@ static void Netchan_EnqueueFragments( const netchan_t *chan, const int length, c
 		MSG_WriteLong( &send, chan->outgoingSequence | FRAGMENT_BIT );
 
 		// send the qport if we are a client
-		if ( chan->sock == NS_CLIENT ) {
-			MSG_WriteShort( &send, qport->integer );
+		if ( chan->sock != NS_SERVER ) {
+			MSG_WriteShort( &send, chan->qport );
 		}
 
 		if ( !chan->compat ) {
@@ -252,8 +253,8 @@ void Netchan_Transmit( netchan_t *chan, int length, const byte *data ) {
 	MSG_WriteLong( &send, chan->outgoingSequence );
 
 	// send the qport if we are a client
-	if ( chan->sock == NS_CLIENT )
-		MSG_WriteShort( &send, qport->integer );
+	if ( chan->sock != NS_SERVER )
+		MSG_WriteShort( &send, chan->qport );
 
 	if ( !chan->compat )
 		MSG_WriteLong(&send, NETCHAN_GENCHECKSUM(chan->challenge, chan->outgoingSequence));
@@ -307,8 +308,8 @@ void Netchan_Enqueue( netchan_t *chan, int length, const byte *data ) {
 	MSG_WriteLong( &send, chan->outgoingSequence );
 
 	// send the qport if we are a client
-	if ( chan->sock == NS_CLIENT )
-		MSG_WriteShort( &send, qport->integer );
+	if ( chan->sock != NS_SERVER )
+		MSG_WriteShort( &send, chan->qport );
 
 	if ( !chan->compat )
 		MSG_WriteLong( &send, NETCHAN_GENCHECKSUM( chan->challenge, chan->outgoingSequence ) );
@@ -629,7 +630,7 @@ static packetQueue_t *list_process( packetQueue_t *head, const int time_diff )
 				NET_SendLoopPacket( item->sock, item->length, item->data );
 			else
 #endif
-				Sys_SendPacket( item->length, item->data, &item->to );
+				Sys_SendPacket( item->sock, item->length, item->data, &item->to );
 			head = list_remove( head, item );
 			Z_Free( item );
 			item = next;
@@ -702,11 +703,12 @@ void NET_SendPacket( netsrc_t sock, int length, const void *data, const netadr_t
 	}
 #ifndef DEDICATED
 	else if ( to->type == NA_LOOPBACK ) {
-		NET_SendLoopPacket( sock, length, data );
+		if ( sock <= NS_SERVER ) // loopback has no channel for extra local players
+			NET_SendLoopPacket( sock, length, data );
 	}
 #endif
 	else {
-		Sys_SendPacket( length, data, to );
+		Sys_SendPacket( sock, length, data, to );
 	}
 }
 

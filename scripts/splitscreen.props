@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Injected into every upstream vcxproj by scripts/build.ps1 via
+  /p:ForceImportBeforeCppTargets, so the upstream project files stay
+  untouched. Adds the splitscreen version define (see q_shared.h) and, for
+  the client project only (quake3e.vcxproj; build.ps1 passes
+  SplitscreenSdlLib to it alone), the static SDL2 library for the gamepads
+  (code/client/in_gamepad.c, Q3E_SDL_STATIC) with the system libraries SDL2
+  needs. The dedicated server never gets SDL.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup Condition="'$(SplitscreenVersion)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>Q3E_SPLITSCREEN_VERSION="$(SplitscreenVersion)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(SplitscreenSdlLib)' != '' and '$(ProjectName)' == 'quake3e'">
+    <ClCompile>
+      <PreprocessorDefinitions>Q3E_SDL_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(SplitscreenSdlLib);setupapi.lib;imm32.lib;version.lib;winmm.lib;ole32.lib;oleaut32.lib;advapi32.lib;shell32.lib;user32.lib;gdi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

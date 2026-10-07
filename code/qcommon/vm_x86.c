@@ -2599,10 +2599,10 @@ static void check_st_depth( void )
 
 static qboolean IsFloorTrap( const vm_t *vm, const int trap )
 {
-	if ( trap == ~CG_FLOOR && vm->index == VM_CGAME )
+	if ( trap == ~CG_FLOOR && VM_IsCgameIndex( vm->index ) )
 		return qtrue;
 
-	if ( trap == ~UI_FLOOR && vm->index == VM_UI )
+	if ( trap == ~UI_FLOOR && VM_IsUIIndex( vm->index ) )
 		return qtrue;
 
 	if ( trap == ~G_FLOOR && vm->index == VM_GAME )
@@ -2614,10 +2614,10 @@ static qboolean IsFloorTrap( const vm_t *vm, const int trap )
 
 static qboolean IsCeilTrap( const vm_t *vm, const int trap )
 {
-	if ( trap == ~CG_CEIL && vm->index == VM_CGAME )
+	if ( trap == ~CG_CEIL && VM_IsCgameIndex( vm->index ) )
 		return qtrue;
 
-	if ( trap == ~UI_CEIL && vm->index == VM_UI )
+	if ( trap == ~UI_CEIL && VM_IsUIIndex( vm->index ) )
 		return qtrue;
 
 	if ( trap == ~G_CEIL && vm->index == VM_GAME )

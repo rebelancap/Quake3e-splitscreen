@@ -212,6 +212,12 @@ void Cbuf_InsertText( const char *text ) {
 	cmd_text.data[ len - 1 ] = '\n';
 
 	cmd_text.cursize += len;
+
+	// splitscreen: text nested (cgame) commands were added before moved too -- keep the
+	// insert point at the same command boundary, not in the middle of a command
+	if ( nestedCmdOffset > 0 ) {
+		nestedCmdOffset += len;
+	}
 }
 
 

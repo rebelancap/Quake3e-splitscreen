@@ -119,9 +119,11 @@ void SV_GetChallenge( const netadr_t *from ) {
 	int		challenge;
 	int		clientChallenge;
 
-	// ignore if we are in single player
+	// ignore if we are in single player (splitscreen R20: except this machine's own local
+	// players on a listen server, who reach it from 127.x.x.x, so they can join a Single Player arena)
 #ifndef DEDICATED
-	if ( Cvar_VariableIntegerValue( "g_gametype" ) == GT_SINGLE_PLAYER || Cvar_VariableIntegerValue("ui_singlePlayerActive")) {
+	if ( ( Cvar_VariableIntegerValue( "g_gametype" ) == GT_SINGLE_PLAYER || Cvar_VariableIntegerValue("ui_singlePlayerActive") )
+		&& !( !com_dedicated->integer && from->type == NA_IP && from->ipv._4[0] == 127 ) ) {
 		return;
 	}
 #endif
@@ -507,10 +509,11 @@ void SV_DirectConnect( const netadr_t *from ) {
 		return;
 	}
 
-	// check for concurrent connections
+	// check for concurrent connections (splitscreen: a listen server does not count
+	// this machine's own local players, who reach it from 127.x.x.x)
 	for ( i = 0, n = 0; i < sv.maxclients; i++ ) {
 		const netadr_t *addr = &svs.clients[ i ].netchan.remoteAddress;
-		if ( addr->type != NA_BOT && NET_CompareBaseAdr( addr, from ) ) {
+		if ( addr->type != NA_BOT && NET_CompareBaseAdr( addr, from ) && ( com_dedicated->integer || !( from->type == NA_IP && from->ipv._4[0] == 127 ) ) ) {
 			if ( svs.clients[ i ].state >= CS_CONNECTED && !svs.clients[ i ].justConnected ) {
 				if ( ++n >= sv_maxclientsPerIP->integer ) {
 					// avoid excessive outgoing traffic

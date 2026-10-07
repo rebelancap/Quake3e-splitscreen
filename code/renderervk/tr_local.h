@@ -1945,18 +1945,25 @@ typedef enum {
 #define	MAX_POLYS		8192
 #define	MAX_POLYVERTS	32768
 
+// splitscreen: every local player's view is one more scene of the frame, and the
+// arrays below are shared by all scenes of a frame: room for MAX_FRAME_VIEWS
+// scenes' dlights and 4x the entities; each scene keeps the stock per-scene limit
+#define MAX_FRAME_VIEWS			8
+#define MAX_FRAME_REFENTITIES	(MAX_REFENTITIES*4)
+#define MAX_SCENE_DLIGHTS		( ARRAY_LEN( backEndData->dlights ) / MAX_FRAME_VIEWS )
+
 // all of the information needed by the back end must be
 // contained in a backEndData_t
 typedef struct {
 	drawSurf_t	drawSurfs[MAX_DRAWSURFS];
 #ifdef USE_PMLIGHT
 	litSurf_t	litSurfs[MAX_LITSURFS];
-	dlight_t	dlights[MAX_REAL_DLIGHTS];
+	dlight_t	dlights[MAX_REAL_DLIGHTS*MAX_FRAME_VIEWS];
 #else
-	dlight_t	dlights[MAX_DLIGHTS];
+	dlight_t	dlights[MAX_DLIGHTS*MAX_FRAME_VIEWS];
 #endif
 
-	trRefEntity_t	entities[MAX_REFENTITIES];
+	trRefEntity_t	entities[MAX_FRAME_REFENTITIES];
 	srfPoly_t	*polys;//[MAX_POLYS];
 	polyVert_t	*polyVerts;//[MAX_POLYVERTS];
 	renderCommandList_t	commands;

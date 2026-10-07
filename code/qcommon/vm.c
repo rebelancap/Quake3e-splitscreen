@@ -217,11 +217,77 @@ static struct vm_s vmTable[ VM_COUNT ];
 static const char *vmName[ VM_COUNT ] = {
 	"qagame",
 	"cgame",
-	"ui"
+	"ui",
+	"cgame", "cgame", "cgame", "cgame", "cgame", "cgame", "cgame",	// VM_CGAME2..8
+	"ui", "ui", "ui", "ui", "ui", "ui", "ui"	// VM_UI2..8
 };
 
 static void VM_VmInfo_f( void );
 static void VM_VmProfile_f( void );
+
+// Hunk blocks left behind by freed QVMs, per vm index.  Hunk memory is only
+// reclaimed by Hunk_Clear / Hunk_ClearToMark, so a module that is shut down and
+// created again on the same level (a client restarting a cgame in place) would
+// otherwise take a fresh copy every time.  Valid only for the hunk generation
+// they were allocated in.
+static struct {
+	void		*block[VM_HUNK_BLOCKS];
+	uint32_t	size[VM_HUNK_BLOCKS];
+	int			generation;
+} vmHunkCache[ VM_COUNT ];
+
+
+/*
+=================
+VM_HunkAlloc
+
+Zero-filled hunk memory for one of vm's blocks: the block the previous
+instance of this vm index left (same hunk generation, large enough), else a
+new Hunk_Alloc.
+=================
+*/
+void *VM_HunkAlloc( vm_t *vm, int block, uint32_t size ) {
+	const int gen = Hunk_Generation();
+	void *p;
+	uint32_t blockSize;
+
+	if ( (unsigned)vm->index < VM_COUNT && vmHunkCache[ vm->index ].generation == gen
+		&& vmHunkCache[ vm->index ].block[ block ] && vmHunkCache[ vm->index ].size[ block ] >= size ) {
+		p = vmHunkCache[ vm->index ].block[ block ];
+		blockSize = vmHunkCache[ vm->index ].size[ block ];
+		vmHunkCache[ vm->index ].block[ block ] = NULL;
+		vmHunkCache[ vm->index ].size[ block ] = 0;
+		Com_Memset( p, 0, size );
+	} else {
+		p = Hunk_Alloc( size, h_current );
+		blockSize = size;
+	}
+	vm->hunkBlock[ block ] = p;
+	vm->hunkBlockSize[ block ] = blockSize;
+	vm->hunkBlockGen[ block ] = gen;
+	return p;
+}
+
+
+// VM_Free: keep vm's hunk blocks for the next instance of its index
+static void VM_KeepHunkBlocks( const vm_t *vm ) {
+	const int gen = Hunk_Generation();
+	int i;
+
+	if ( (unsigned)vm->index >= VM_COUNT || !vm->name ) {
+		return;
+	}
+	if ( vmHunkCache[ vm->index ].generation != gen ) {
+		Com_Memset( &vmHunkCache[ vm->index ], 0, sizeof( vmHunkCache[0] ) );
+		vmHunkCache[ vm->index ].generation = gen;
+	}
+	for ( i = 0; i < VM_HUNK_BLOCKS; i++ ) {
+		if ( vm->hunkBlock[i] && vm->hunkBlockGen[i] == gen && vm->hunkBlockSize[i] > vmHunkCache[ vm->index ].size[i] ) {
+			vmHunkCache[ vm->index ].block[i] = vm->hunkBlock[i];
+			vmHunkCache[ vm->index ].size[i] = vm->hunkBlockSize[i];
+		}
+	}
+}
 
 #ifdef DEBUG
 void VM_Debug( int level ) {
@@ -863,7 +929,7 @@ static vmHeader_t *VM_LoadQVM( vm_t *vm, qboolean alloc ) {
 
 	if ( alloc ) {
 		// allocate zero filled space for initialized and uninitialized data
-		vm->dataBase = Hunk_Alloc( dataAlloc, h_current );
+		vm->dataBase = VM_HunkAlloc( vm, VM_HUNK_DATA, dataAlloc );
 		vm->dataMask = dataLength - 1;
 		vm->dataAlloc = dataAlloc;
 	} else {
@@ -893,7 +959,7 @@ static vmHeader_t *VM_LoadQVM( vm_t *vm, qboolean alloc ) {
 		Com_Printf( "Loading %d jump table targets\n", vm->numJumpTableTargets );
 
 		if ( alloc ) {
-			vm->jumpTableTargets = (int32_t *) Hunk_Alloc( header->jtrgLength, h_current );
+			vm->jumpTableTargets = (int32_t *) VM_HunkAlloc( vm, VM_HUNK_JTS, header->jtrgLength );
 		} else {
 			if ( vm->numJumpTableTargets != previousNumJumpTableTargets ) {
 				VM_Free( vm );
@@ -924,7 +990,7 @@ static vmHeader_t *VM_LoadQVM( vm_t *vm, qboolean alloc ) {
 		vm->numJumpTableTargets = length >> 2;
 		Com_Printf( "Loading %d external jump table targets\n", vm->numJumpTableTargets );
 		if ( alloc == qtrue ) {
-			vm->jumpTableTargets = (int32_t *) Hunk_Alloc( length, h_current );
+			vm->jumpTableTargets = (int32_t *) VM_HunkAlloc( vm, VM_HUNK_JTS, length );
 		} else {
 			Com_Memset( vm->jumpTableTargets, 0, length );
 		}
@@ -1674,7 +1740,7 @@ void VM_ReplaceInstructions( vm_t *vm, instruction_t *buf ) {
 
 	//Com_Printf( S_COLOR_GREEN "VMINFO [%s] crc: %08X, ic: %i, dl: %i\n", vm->name, vm->crc32sum, vm->instructionCount, vm->exactDataLength );
 
-	if ( vm->index == VM_CGAME ) {
+	if ( VM_IsCgameIndex( vm->index ) ) {
 		if ( vm->crc32sum == 0x3E93FC1A && vm->instructionCount == 123596 && vm->exactDataLength == 2007536 ) {
 			ip = buf + 110190;
 			if ( ip->op == OP_ENTER && (ip+183)->op == OP_LEAVE && ip->value == (ip+183)->value ) {
@@ -1715,7 +1781,7 @@ void VM_ReplaceInstructions( vm_t *vm, instruction_t *buf ) {
 		}
 	}
 
-	if ( vm->index == VM_UI ) {
+	if ( VM_IsUIIndex( vm->index ) ) {
 		// fix OSP demo UI
 		if ( vm->crc32sum == 0xCA84F31D && vm->instructionCount == 78585 && vm->exactDataLength == 542180 ) {
 			if ( memcmp( vm->dataBase + 0x3D2E, "dm_67", 5 ) == 0 ) {
@@ -1976,6 +2042,7 @@ void VM_Free( vm_t *vm ) {
 		Z_Free( vm->instructionPointers );
 	}
 #endif
+	VM_KeepHunkBlocks( vm );
 	Com_Memset( vm, 0, sizeof( *vm ) );
 }
 
@@ -1985,6 +2052,7 @@ void VM_Clear( void ) {
 	for ( i = 0; i < VM_COUNT; i++ ) {
 		VM_Free( &vmTable[ i ] );
 	}
+	Com_Memset( vmHunkCache, 0, sizeof( vmHunkCache ) );
 }
 
 

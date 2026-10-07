@@ -1017,6 +1017,10 @@ int main( int argc, const char* argv[] )
 		strcat( cmdline, argv[i] );
 	}
 
+#ifndef DEDICATED
+	Sys_SplitParseFlags( cmdline );	// splitscreen: --independent / --child / --noactivate
+#endif
+
 	/*useXYpos = */ Com_EarlyParseCmdLine( cmdline, con_title, sizeof( con_title ), &xpos, &ypos );
 
 	// bk000306 - clear queues

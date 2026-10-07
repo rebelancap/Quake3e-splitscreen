@@ -71,6 +71,56 @@ static int			listener_number;
 static vec3_t		listener_origin;
 static vec3_t		listener_axis[3];
 
+// splitscreen: listeners of local players 2..8, refreshed every frame by
+// their cgames (cl_splitscreen.c); a sound is heard from the nearest one
+typedef struct {
+	int		entnum;
+	vec3_t	origin;
+	vec3_t	axis[3];
+	int		frame;
+} splitListener_t;
+static splitListener_t	s_splitListeners[MAX_SPLITVIEW];
+static int				s_splitActive[MAX_SPLITVIEW];
+static int				s_numSplitActive;	// valid extra listeners this frame
+
+void S_SplitListener( int slot, int entityNum, const vec3_t origin, vec3_t axis[3] ) {
+	splitListener_t *l;
+	if ( slot <= 0 || slot >= MAX_SPLITVIEW || entityNum < 0 || entityNum >= MAX_GENTITIES ) {
+		return;
+	}
+	l = &s_splitListeners[ slot ];
+	l->entnum = entityNum;
+	VectorCopy( origin, l->origin );
+	VectorCopy( axis[0], l->axis[0] );
+	VectorCopy( axis[1], l->axis[1] );
+	VectorCopy( axis[2], l->axis[2] );
+	l->frame = cls.framecount ? cls.framecount : 1;
+}
+
+static void S_SplitUpdateListeners( void ) {
+	int i;
+	s_numSplitActive = 0;
+	for ( i = 1; i < MAX_SPLITVIEW; i++ ) {
+		if ( s_splitListeners[i].frame && cls.framecount - s_splitListeners[i].frame <= 2 ) {
+			s_splitActive[ s_numSplitActive++ ] = i;
+		}
+	}
+}
+
+// the view entity of any local player
+static qboolean S_IsListener( int entnum ) {
+	int i;
+	if ( entnum == listener_number ) {
+		return qtrue;
+	}
+	for ( i = 0; i < s_numSplitActive; i++ ) {
+		if ( s_splitListeners[ s_splitActive[i] ].entnum == entnum ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
+}
+
 int			s_soundtime;		// sample PAIRS
 int   		s_paintedtime; 		// sample PAIRS
 
@@ -390,7 +440,31 @@ S_SpatializeOrigin
 Used for spatializing s_channels
 =================
 */
+static void S_SpatializeFrom( const vec3_t origin, int master_vol, int *left_vol, int *right_vol,
+	const vec3_t lorg, vec3_t lax[3] );
+
 static void S_SpatializeOrigin( const vec3_t origin, int master_vol, int *left_vol, int *right_vol )
+{
+	int i, l, r;
+
+	S_SpatializeFrom( origin, master_vol, left_vol, right_vol, listener_origin, listener_axis );
+
+	// splitscreen: the loudest (nearest) listener wins; centred with 3+
+	for ( i = 0; i < s_numSplitActive; i++ ) {
+		splitListener_t *sl = &s_splitListeners[ s_splitActive[i] ];
+		S_SpatializeFrom( origin, master_vol, &l, &r, sl->origin, sl->axis );
+		if ( l + r > *left_vol + *right_vol ) {
+			*left_vol = l;
+			*right_vol = r;
+		}
+	}
+	if ( s_numSplitActive >= 2 ) {
+		*left_vol = *right_vol = ( *left_vol + *right_vol ) / 2;
+	}
+}
+
+static void S_SpatializeFrom( const vec3_t origin, int master_vol, int *left_vol, int *right_vol,
+	const vec3_t lorg, vec3_t lax[3] )
 {
 	vec_t	dot;
 	vec_t	dist;
@@ -399,9 +473,9 @@ static void S_SpatializeOrigin( const vec3_t origin, int master_vol, int *left_v
 	vec3_t	vec;
 
 	const float dist_mult = SOUND_ATTENUATE;
-	
+
 	// calculate stereo separation and distance attenuation
-	VectorSubtract(origin, listener_origin, source_vec);
+	VectorSubtract(origin, lorg, source_vec);
 
 	dist = VectorNormalize(source_vec);
 	dist -= SOUND_FULLVOLUME;
@@ -409,7 +483,7 @@ static void S_SpatializeOrigin( const vec3_t origin, int master_vol, int *left_v
 		dist = 0.0f;		// close enough to be at full volume
 	dist *= dist_mult;		// different attenuation levels
 	
-	VectorRotate( source_vec, listener_axis, vec );
+	VectorRotate( source_vec, lax, vec );
 
 	dot = -vec[1];
 
@@ -513,7 +587,7 @@ static void S_Base_StartSound( const vec3_t origin, int entityNum, int entchanne
 	// pick a channel to play on
 
 	// try to limit sound duplication
-	if ( entityNum == listener_number )
+	if ( S_IsListener( entityNum ) )
 		allowed = 16;
 	else
 		allowed = 8;
@@ -747,7 +821,7 @@ void S_Base_AddLoopingSound( int entityNum, const vec3_t origin, const vec3_t ve
 	loopSounds[entityNum].dopplerScale = 1.0;
 	loopSounds[entityNum].sfx = sfx;
 
-	if (s_doppler->integer && VectorLengthSquared(velocity)>0.0) {
+	if (s_doppler->integer && !s_numSplitActive && VectorLengthSquared(velocity)>0.0) {
 		vec3_t	out;
 		float	lena, lenb;
 
@@ -1047,15 +1121,16 @@ void S_Base_Respatialize( int entityNum, const vec3_t head, vec3_t axis[3], int 
 	VectorCopy(axis[0], listener_axis[0]);
 	VectorCopy(axis[1], listener_axis[1]);
 	VectorCopy(axis[2], listener_axis[2]);
+	S_SplitUpdateListeners();
 
-	// update spatialization for dynamic sounds	
+	// update spatialization for dynamic sounds
 	ch = s_channels;
 	for ( i = 0 ; i < MAX_CHANNELS ; i++, ch++ ) {
 		if ( !ch->thesfx ) {
 			continue;
 		}
 		// anything coming from the view entity will always be full volume
-		if (ch->entnum == listener_number) {
+		if ( S_IsListener( ch->entnum ) ) {
 			ch->leftvol = ch->master_vol;
 			ch->rightvol = ch->master_vol;
 		} else {

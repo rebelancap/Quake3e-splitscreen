@@ -160,3 +160,8 @@ void WIN_Minimize( void );
 
 void GLW_HideFullscreenWindow( void );
 void GLW_RestoreGamma( void );
+void GLW_SplitShowWindow( void );			// win_splitproc.c (splitscreen Independent mode)
+void GLW_SplitMarkShell( void );			// R16: Independent tiles marked fullscreen for the shell
+void GLW_SplitUnmarkShell( HWND hwnd );		// before the game window is destroyed
+void Sys_SplitParseFlags( const char *cmdline );
+qboolean Sys_SplitNoActivate( void );

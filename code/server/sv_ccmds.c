@@ -184,7 +184,13 @@ static void SV_Map_f( void ) {
 		Cvar_SetIntegerValue( "g_gametype", GT_SINGLE_PLAYER );
 		Cvar_Set( "g_doWarmup", "0" );
 		// may not set sv_maxclients directly, always set latched
+#ifndef DEDICATED
+		// splitscreen R20: room for the arena's bots plus every local player who may join
+		// (cl_splitMaxPlayers, 8 by default: 8 + 7 = 15 slots)
+		Cvar_SetLatched( "sv_maxclients", va( "%i", 8 + MAX( 0, Cvar_VariableIntegerValue( "cl_splitMaxPlayers" ) - 1 ) ) );
+#else
 		Cvar_SetLatched( "sv_maxclients", "8" );
+#endif
 		cmd += 2;
 		if (!Q_stricmp( cmd, "devmap" ) ) {
 			cheat = qtrue;

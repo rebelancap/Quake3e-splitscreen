@@ -60,4 +60,11 @@ void IN_Shutdown( void );
 // signals.c
 void InitSig( void );
 
+#ifdef __linux__
+// unix_splitproc.c: splitscreen Independent mode's windows (X11 driver, no focus stealing)
+qboolean Sys_SplitNeedX11( void );
+qboolean Sys_SplitQuietWindow( void );
+void Sys_SplitShowWindow( void );
+#endif
+
 #endif

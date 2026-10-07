@@ -182,6 +182,17 @@ static sockaddr_t socksRelayAddr;
 static SOCKET	ip_socket = INVALID_SOCKET;
 static SOCKET	socks_socket = INVALID_SOCKET;
 
+#ifndef DEDICATED
+// splitscreen: each extra local player gets its own IPv4 UDP socket
+// (ephemeral source port), indexed by sock - NS_CLIENT2
+#define NUM_EXTRA_CLIENT_SOCKS ( NS_CLIENT_LAST - NS_CLIENT2 + 1 )
+static SOCKET	extra_client_sockets[ NUM_EXTRA_CLIENT_SOCKS ] = {
+	INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET,
+	INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET
+};
+static void NET_CloseExtraClientSockets( void );
+#endif
+
 #ifdef USE_IPV6
 static SOCKET	ip6_socket = INVALID_SOCKET;
 static SOCKET	multicast6_socket = INVALID_SOCKET;
@@ -766,9 +777,24 @@ static qboolean NET_GetPacket( netadr_t *net_from, msg_t *net_message, const fd_
 Sys_SendPacket
 ==================
 */
-void Sys_SendPacket( int length, const void *data, const netadr_t *to ) {
+void Sys_SendPacket( netsrc_t sock, int length, const void *data, const netadr_t *to ) {
 	int ret = SOCKET_ERROR;
 	sockaddr_t addr;
+
+#ifndef DEDICATED
+	if ( NET_IsExtraClientSock( sock ) ) {
+		SOCKET s = extra_client_sockets[ sock - NS_CLIENT2 ];
+		if ( s == INVALID_SOCKET || to->type != NA_IP ) {
+			return; // extra local players are IPv4-only, no SOCKS
+		}
+		NetadrToSockadr( to, &addr );
+		ret = sendto( s, data, length, 0, (struct sockaddr *) &addr, sizeof( struct sockaddr_in ) );
+		if ( ret == SOCKET_ERROR && socketError != EAGAIN ) {
+			Com_Printf( "Sys_SendPacket(%i): %s\n", sock, NET_ErrorString() );
+		}
+		return;
+	}
+#endif
 
 	switch ( to->type ) {
 		case NA_BROADCAST:
@@ -1733,6 +1759,107 @@ static qboolean NET_GetCvars( void ) {
 }
 
 
+#ifndef DEDICATED
+/*
+====================
+NET_OpenClientSocket / NET_CloseClientSocket
+
+splitscreen: per-player UDP sockets for extra local players
+====================
+*/
+qboolean NET_OpenClientSocket( netsrc_t sock ) {
+	SOCKET *s;
+	int err;
+
+	if ( !NET_IsExtraClientSock( sock ) ) {
+		return qfalse;
+	}
+	if ( !networkingEnabled ) {
+		Com_Printf( S_COLOR_YELLOW "NET_OpenClientSocket: networking is disabled\n" );
+		return qfalse;
+	}
+
+	s = &extra_client_sockets[ sock - NS_CLIENT2 ];
+	if ( *s != INVALID_SOCKET ) {
+		return qtrue;
+	}
+
+	*s = NET_IPSocket( net_ip->string, PORT_ANY, &err );
+	return ( *s != INVALID_SOCKET ) ? qtrue : qfalse;
+}
+
+
+void NET_CloseClientSocket( netsrc_t sock ) {
+	SOCKET *s;
+
+	if ( !NET_IsExtraClientSock( sock ) ) {
+		return;
+	}
+
+	s = &extra_client_sockets[ sock - NS_CLIENT2 ];
+	if ( *s != INVALID_SOCKET ) {
+		closesocket( *s );
+		*s = INVALID_SOCKET;
+	}
+}
+
+
+static void NET_CloseExtraClientSockets( void ) {
+	int i;
+	for ( i = NS_CLIENT2; i <= NS_CLIENT_LAST; i++ ) {
+		NET_CloseClientSocket( (netsrc_t) i );
+	}
+}
+
+
+/*
+====================
+NET_ExtraClientEvent
+
+Drain the extra local players' sockets and hand packets to their contexts.
+====================
+*/
+static void NET_ExtraClientEvent( const fd_set *fdr ) {
+	byte bufData[ MAX_MSGLEN_BUF ];
+	sockaddr_t from;
+	socklen_t fromlen;
+	netadr_t adr;
+	msg_t netmsg;
+	int i, ret;
+
+	for ( i = 0; i < NUM_EXTRA_CLIENT_SOCKS; i++ ) {
+		if ( extra_client_sockets[ i ] == INVALID_SOCKET || !FD_ISSET( extra_client_sockets[ i ], fdr ) ) {
+			continue;
+		}
+		while ( extra_client_sockets[ i ] != INVALID_SOCKET ) {
+			MSG_Init( &netmsg, bufData, MAX_MSGLEN );
+			fromlen = sizeof( from );
+			ret = recvfrom( extra_client_sockets[ i ], (void *)netmsg.data, netmsg.maxsize, 0, (struct sockaddr *) &from, &fromlen );
+			if ( ret == SOCKET_ERROR ) {
+				int err = socketError;
+				if ( err != EAGAIN && err != ECONNRESET ) {
+					Com_Printf( "NET_ExtraClientEvent: %s\n", NET_ErrorString() );
+				}
+				if ( err != ECONNRESET ) {
+					break;
+				}
+				continue;
+			}
+			if ( ret >= netmsg.maxsize ) {
+				continue;
+			}
+			memset( &from.v4.sin_zero, 0, sizeof( from.v4.sin_zero ) );
+			adr.type = NA_BAD;
+			SockadrToNetadr( &from, &adr );
+			netmsg.readcount = 0;
+			netmsg.cursize = ret;
+			CL_PacketEventSock( (netsrc_t)( NS_CLIENT2 + i ), &adr, &netmsg );
+		}
+	}
+}
+#endif // !DEDICATED
+
+
 /*
 ====================
 NET_Config
@@ -1802,7 +1929,10 @@ static void NET_Config( qboolean enableNetworking ) {
 			closesocket( socks_socket );
 			socks_socket = INVALID_SOCKET;
 		}
-		
+#ifndef DEDICATED
+		NET_CloseExtraClientSockets();
+#endif
+
 	}
 
 	if( start )
@@ -1900,6 +2030,10 @@ static void NET_Event( const fd_set *fdr )
 		else
 			break;
 	}
+
+#ifndef DEDICATED
+	NET_ExtraClientEvent( fdr );
+#endif
 }
 
 
@@ -1938,6 +2072,19 @@ qboolean NET_Sleep( int timeout )
 
 		if ( highestfd == INVALID_SOCKET || ip6_socket > highestfd )
 			highestfd = ip6_socket;
+	}
+#endif
+
+#ifndef DEDICATED
+	{
+		int i;
+		for ( i = 0; i < NUM_EXTRA_CLIENT_SOCKS; i++ ) {
+			if ( extra_client_sockets[ i ] != INVALID_SOCKET ) {
+				FD_SET( extra_client_sockets[ i ], &fdr );
+				if ( highestfd == INVALID_SOCKET || extra_client_sockets[ i ] > highestfd )
+					highestfd = extra_client_sockets[ i ];
+			}
+		}
 	}
 #endif
 

@@ -786,7 +786,8 @@ LRESULT WINAPI MainWndProc( HWND hWnd, UINT uMsg, WPARAM  wParam, LPARAM lParam 
 		IN_UpdateWindow( NULL, qtrue );
 		IN_Activate( gw_active );
 
-		if ( !glw_state.cdsFullscreen )	{
+		// (splitscreen Independent mode: a tile's position is not the saved window position)
+		if ( !glw_state.cdsFullscreen && !CL_SplitWindowRect( NULL, NULL, NULL, NULL ) )	{
 			Cvar_SetIntegerValue( "vid_xpos", g_wv.winRect.left );
 			Cvar_SetIntegerValue( "vid_ypos", g_wv.winRect.top );
 			vid_xpos->modified = qfalse;

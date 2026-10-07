@@ -1388,6 +1388,9 @@ void SV_Frame( int msec ) {
 		VM_Call( gvm, 1, GAME_RUN_FRAME, sv.time );
 	}
 
+	// splitscreen Server options (design 18): playerState levers, bots (inert on dedicated)
+	SV_SplitRulesFrame();
+
 	if ( com_speeds->integer ) {
 		time_game = Sys_Milliseconds () - startTime;
 	}

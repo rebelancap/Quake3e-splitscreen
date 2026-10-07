@@ -21,6 +21,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "tr_local.h"
 
+// splitscreen: render command bytes of the last frame, for r_speeds 1
+static int r_frameCommandBytes;
+void R_PrintSceneTotals( int commandBytes, int maxCommandBytes );
+
 /*
 =====================
 R_PerformanceCounters
@@ -39,6 +43,7 @@ static void R_PerformanceCounters( void ) {
 			backEnd.pc.c_shaders, backEnd.pc.c_surfaces, tr.pc.c_leafs, backEnd.pc.c_vertexes, 
 			backEnd.pc.c_indexes/3, backEnd.pc.c_totalIndexes/3, 
 			R_SumOfUsedImages()/(1000000.0f), backEnd.pc.c_overDraw / (float)(glConfig.vidWidth * glConfig.vidHeight) ); 
+		R_PrintSceneTotals( r_frameCommandBytes, MAX_RENDER_COMMANDS );
 	} else if (r_speeds->integer == 2) {
 		ri.Printf (PRINT_ALL, "(patch) %i sin %i sclip  %i sout %i bin %i bclip %i bout\n",
 			tr.pc.c_sphere_cull_patch_in, tr.pc.c_sphere_cull_patch_clip, tr.pc.c_sphere_cull_patch_out, 
@@ -429,6 +434,7 @@ void RE_EndFrame( int *frontEndMsec, int *backEndMsec ) {
 	}
 	cmd->commandId = RC_SWAP_BUFFERS;
 
+	r_frameCommandBytes = backEndData->commands.used;
 	R_IssueRenderCommands();
 
 	R_PerformanceCounters();

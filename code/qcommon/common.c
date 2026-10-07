@@ -65,6 +65,9 @@ int32_t	x87_cw_cvfi = 0;
 #endif
 
 static fileHandle_t logfile = FS_INVALID_HANDLE;
+// splitscreen R21: the log was closed by a filesystem shutdown inside this session
+// (Com_GameRestart); it is reopened in append mode so the session's log stays whole
+static qboolean com_logfileReopen = qfalse;
 static fileHandle_t com_journalFile = FS_INVALID_HANDLE ; // events are written here
 fileHandle_t com_journalDataFile = FS_INVALID_HANDLE; // config files are written here
 
@@ -215,14 +218,14 @@ void FORMAT_PRINTF(1, 2) QDECL Com_Printf( const char *fmt, ... ) {
 		// TTimo: only open the qconsole.log if the filesystem is in an initialized state
 		//   also, avoid recursing in the qconsole.log opening (i.e. if fs_debug is on)
 		if ( logfile == FS_INVALID_HANDLE && FS_Initialized() && !opening_qconsole ) {
-			const char *logName = "qconsole.log";
+			const char *logName = Com_SplitChildTag()[0] ? va( "qconsole-%s.log", Com_SplitChildTag() ) : "qconsole.log";
 			int mode;
 
 			opening_qconsole = qtrue;
 
 			mode = com_logfile->integer - 1;
 
-			if ( mode & 2 )
+			if ( ( mode & 2 ) || com_logfileReopen )
 				logfile = FS_FOpenFileAppend( logName );
 			else
 				logfile = FS_FOpenFileWrite( logName );
@@ -236,7 +239,12 @@ void FORMAT_PRINTF(1, 2) QDECL Com_Printf( const char *fmt, ... ) {
 				newtime = localtime( &aclock );
 				strftime( timestr, sizeof( timestr ), "%a %b %d %X %Y", newtime );
 
-				Com_Printf( "logfile opened on %s\n", timestr );
+				if ( com_logfileReopen ) {
+					Com_Printf( "logfile reopened (append) on %s after a filesystem restart\n", timestr );
+				} else {
+					Com_Printf( "logfile opened on %s\n", timestr );
+				}
+				com_logfileReopen = qfalse;
 
 				if ( mode & 1 ) {
 					// force it to not buffer so we get valid
@@ -335,6 +343,12 @@ void NORETURN FORMAT_PRINTF(2, 3) QDECL Com_Error( errorParm_t code, const char 
 	va_start( argptr, fmt );
 	Q_vsnprintf( com_errorMessage, sizeof( com_errorMessage ), fmt, argptr );
 	va_end( argptr );
+
+#ifndef DEDICATED
+	// splitscreen: an extra local player's error drops only that player
+	// (does not return then)
+	CL_SplitCatchError( code, com_errorMessage );
+#endif
 
 	if ( code != ERR_DISCONNECT && code != ERR_NEED_CD ) {
 		// we can't recover from ERR_FATAL so there is no recipients for com_errorMessage
@@ -459,7 +473,7 @@ quake3 set test blah + map test
 ============================================================================
 */
 
-#define	MAX_CONSOLE_LINES	32
+// MAX_CONSOLE_LINES: qcommon.h (splitscreen: 64, was 32 here)
 static int	com_numConsoleLines;
 static char	*com_consoleLines[MAX_CONSOLE_LINES];
 
@@ -1811,6 +1825,7 @@ typedef struct hunkblock_s {
 static	hunkblock_t *hunkblocks;
 
 static	hunkUsed_t	hunk_low, hunk_high;
+static	int			hunk_generation = 1;
 static	hunkUsed_t	*hunk_permanent, *hunk_temp;
 
 static	byte	*s_hunkData = NULL;
@@ -2163,6 +2178,43 @@ void Hunk_SmallLog( void ) {
 
 /*
 =================
+Com_UrTHunkDefault (splitscreen, R18)
+
+Urban Terror 4.3 needs more hunk than Quake 3 (UrT's own default is 800 MB;
+up to 8 local players need 1024): when the game is q3ut4, com_hunkMegs is
+raised to 1024 unless the command line sets it.  Never lowered.
+=================
+*/
+#define URT_HUNKMEGS	1024
+
+static void Com_UrTHunkDefault( void ) {
+	cvar_t *cv;
+	int i;
+
+	if ( FS_UrTDetected() ) {
+		Com_Printf( "urt: detected q3ut4 install, fs_basegame q3ut4\n" );
+	}
+	if ( !FS_UrTGame() ) {
+		return;
+	}
+	for ( i = 0; i < com_numConsoleLines; i++ ) {
+		Cmd_TokenizeString( com_consoleLines[i] );
+		// any command-line set of it: set / seta / sets / setu (R19)
+		if ( ( !Q_stricmp( Cmd_Argv( 0 ), "set" ) || !Q_stricmp( Cmd_Argv( 0 ), "seta" ) || !Q_stricmp( Cmd_Argv( 0 ), "sets" )
+				|| !Q_stricmp( Cmd_Argv( 0 ), "setu" ) ) && !Q_stricmp( Cmd_Argv( 1 ), "com_hunkMegs" ) ) {
+			return;		// the user's choice
+		}
+	}
+	cv = Cvar_Get( "com_hunkMegs", XSTRING( DEF_COMHUNKMEGS ), CVAR_LATCH | CVAR_ARCHIVE );
+	if ( cv->integer < URT_HUNKMEGS ) {
+		Com_Printf( "urt: com_hunkMegs %i -> %i (Urban Terror)\n", cv->integer, URT_HUNKMEGS );
+		Cvar_Set2( "com_hunkMegs", XSTRING( URT_HUNKMEGS ), qtrue );
+	}
+}
+
+
+/*
+=================
 Com_InitHunkMemory
 =================
 */
@@ -2220,6 +2272,19 @@ int	Hunk_MemoryRemaining( void ) {
 
 
 /*
+====================
+Hunk_Generation
+
+Changes whenever hunk memory is reclaimed (Hunk_Clear, Hunk_ClearToMark): a
+block allocated in an earlier generation may have been given out again.
+====================
+*/
+int Hunk_Generation( void ) {
+	return hunk_generation;
+}
+
+
+/*
 ===================
 Hunk_SetMark
 
@@ -2240,6 +2305,7 @@ The client calls this before starting a vid_restart or snd_restart
 =================
 */
 void Hunk_ClearToMark( void ) {
+	hunk_generation++;
 	hunk_low.permanent = hunk_low.temp = hunk_low.mark;
 	// hunk_high.permanent = hunk_high.temp = hunk_high.mark; // do not touch server side
 }
@@ -2278,6 +2344,7 @@ void Hunk_Clear( void ) {
 #ifndef DEDICATED
 	CIN_CloseAllVideos();
 #endif
+	hunk_generation++;
 	hunk_low.mark = 0;
 	hunk_low.permanent = 0;
 	hunk_low.temp = 0;
@@ -3104,6 +3171,86 @@ static void Com_Crash_f( void ) {
 
 /*
 ==================
+Com_SeedSplitConfig
+
+Splitscreen: our executables archive to Q3CONFIG_CFG (q3config-ss.cfg /
+q3config_server-ss.cfg) so they can share a home path with upstream's, which
+keep q3config.cfg.  Called right before Q3CONFIG_CFG is exec'd (startup, game
+restart, game-dir change): when the current game dir has no Q3CONFIG_CFG in
+the home path but has upstream's file (home path first, then base path), copy
+it as-is once.  Never in an Independent-mode child, never in safe mode, never
+over an existing Q3CONFIG_CFG.
+==================
+*/
+void Com_SeedSplitConfig( void )
+{
+	const char *game, *bases[2], *path;
+	fileHandle_t h;
+	FILE *f = NULL;
+	char *buf;
+	long len;
+	int i;
+
+	if ( Com_SplitChildTag()[0] || Com_SafeMode() || FS_FileExists( Q3CONFIG_CFG ) ) {
+		return;
+	}
+
+	game = FS_GetCurrentGameDir();
+	bases[0] = FS_GetHomePath();
+	bases[1] = Cvar_VariableString( "fs_basepath" );
+	for ( i = 0; i < 2 && !f; i++ ) {
+		if ( !bases[i][0] || ( i == 1 && !Q_stricmp( bases[1], bases[0] ) ) ) {
+			continue;
+		}
+		path = FS_BuildOSPath( bases[i], game, Q3CONFIG_CFG_UPSTREAM );
+		f = Sys_FOpen( path, "rb" );
+	}
+	if ( !f ) {
+		return;
+	}
+
+	fseek( f, 0, SEEK_END );
+	len = ftell( f );
+	fseek( f, 0, SEEK_SET );
+	if ( len <= 0 || len > 0x400000 ) {
+		fclose( f );
+		return;
+	}
+	buf = Z_Malloc( len );
+	if ( (long)fread( buf, 1, len, f ) != len ) {
+		Z_Free( buf );
+		fclose( f );
+		return;
+	}
+	fclose( f );
+
+	h = FS_FOpenFileWrite( Q3CONFIG_CFG );
+	if ( h != FS_INVALID_HANDLE ) {
+		FS_Write( buf, len, h );
+		FS_FCloseFile( h );
+		Com_Printf( "config: %s created from %s\n", Q3CONFIG_CFG, Q3CONFIG_CFG_UPSTREAM );
+	}
+	Z_Free( buf );
+}
+
+
+static qboolean Com_FileReadable( const char *qpath )
+{
+	fileHandle_t h;
+	int len;
+
+	FS_BypassPure();	// like exec
+	len = FS_FOpenFileRead( qpath, &h, qtrue );
+	FS_RestorePure();
+	if ( h != FS_INVALID_HANDLE ) {
+		FS_FCloseFile( h );
+	}
+	return ( len > 0 && h != FS_INVALID_HANDLE ) ? qtrue : qfalse;
+}
+
+
+/*
+==================
 Com_ExecuteCfg
 
 For controlling environment variables
@@ -3117,10 +3264,17 @@ static void Com_ExecuteCfg( void )
 	if (!Com_SafeMode())
 	{
 		// skip the q3config.cfg and autoexec.cfg if "safe" is on the command line
+		Com_SeedSplitConfig();
 		Cbuf_ExecuteText(EXEC_NOW, "exec " Q3CONFIG_CFG "\n");
 		Cbuf_Execute();
 		Cbuf_ExecuteText(EXEC_NOW, "exec autoexec.cfg\n");
 		Cbuf_Execute();
+		// splitscreen: -ss-only overrides; silent when the file is absent
+		// (an existence probe, not FS_ReadFile, so a journal stays in step)
+		if ( Com_FileReadable( AUTOEXEC_SS_CFG ) ) {
+			Cbuf_ExecuteText( EXEC_NOW, "exec " AUTOEXEC_SS_CFG "\n" );
+			Cbuf_Execute();
+		}
 	}
 }
 
@@ -3155,6 +3309,17 @@ void Com_GameRestart( int checksumFeed, qboolean clientRestart )
 
 		// Reset console command history
 		Con_ResetHistory();
+
+		// splitscreen R21: FS_Shutdown closes every file handle, the log's too, while
+		// common.c kept writing to the dead handle (or to one reused by the next opened
+		// file): everything after a game restart was lost.  Close it here; the first
+		// print after the filesystem is back reopens it in append mode.
+		if ( logfile != FS_INVALID_HANDLE ) {
+			Com_Printf( "logfile: closing for the game restart (reopened in append mode)\n" );
+			FS_FCloseFile( logfile );
+			logfile = FS_INVALID_HANDLE;
+			com_logfileReopen = qtrue;
+		}
 
 		// Shutdown FS early so Cvar_Restart will not reset old game cvars
 		FS_Shutdown( qtrue );
@@ -3995,7 +4160,8 @@ void Com_Init( char *commandLine ) {
 
 	FS_InitFilesystem();
 
-	com_logfile = Cvar_Get( "logfile", "0", CVAR_TEMP );
+	// splitscreen R21: CVAR_NORESTART -- a game restart (Cvar_Restart) must not turn the log off
+	com_logfile = Cvar_Get( "logfile", "0", CVAR_TEMP | CVAR_NORESTART );
 	Cvar_CheckRange( com_logfile, "0", "4", CV_INTEGER );
 	Cvar_SetDescription( com_logfile, "System console logging:\n"
 		" 0 - disabled\n"
@@ -4020,6 +4186,7 @@ void Com_Init( char *commandLine ) {
 	Cvar_CheckRange( com_dedicated, "0", "2", CV_INTEGER );
 #endif
 	Cvar_SetDescription( com_dedicated, "Enables dedicated server mode.\n 0: Listen server\n 1: Unlisted dedicated server \n 2: Listed dedicated server" );
+	Com_UrTHunkDefault();	// splitscreen R18
 	// allocate the stack based hunk allocator
 	Com_InitHunkMemory();
 
@@ -4217,6 +4384,28 @@ void Com_Init( char *commandLine ) {
 
 //==================================================================
 
+/*
+===============
+Com_SplitChildTag
+
+Splitscreen Independent mode (client/cl_splitindep.c): a spawned player
+window (cl_splitChild <player> on its command line) is "child<player>": it
+logs to qconsole-child<player>.log, keeps its own pk3 cache and never writes
+(or seeds) Q3CONFIG_CFG.  "" for every normal process.
+===============
+*/
+const char *Com_SplitChildTag( void ) {
+	static char tag[16];
+	const int n = Cvar_VariableIntegerValue( "cl_splitChild" );
+
+	if ( n < 2 || n > 8 ) {	// the players of a child window (MAX_SPLITVIEW, cl_splitindep.c)
+		return "";
+	}
+	Com_sprintf( tag, sizeof( tag ), "child%i", n );
+	return tag;
+}
+
+
 static void Com_WriteConfigToFile( const char *filename ) {
 	fileHandle_t	f;
 
@@ -4259,6 +4448,11 @@ void Com_WriteConfiguration( void ) {
 		return;
 	}
 	cvar_modifiedFlags &= ~CVAR_ARCHIVE;
+
+	// splitscreen Independent mode: a player's window never writes the shared config
+	if ( Com_SplitChildTag()[0] ) {
+		return;
+	}
 
 	Com_WriteConfigToFile( Q3CONFIG_CFG );
 

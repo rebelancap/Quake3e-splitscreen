@@ -46,19 +46,21 @@ at the same time.
 ===============================================================================
 */
 
-typedef struct {
-	int			down[2];		// key nums holding it down
-	unsigned	downtime;		// msec timestamp
-	unsigned	msec;			// msec down this frame if both a down and up happened
-	qboolean	active;			// current state
-	qboolean	wasPressed;		// set when down, not cleared when up
-} kbutton_t;
-
-static kbutton_t in_left, in_right, in_forward, in_back;
-static kbutton_t in_lookup, in_lookdown, in_moveleft, in_moveright;
-static kbutton_t in_strafe, in_speed;
-static kbutton_t in_up, in_down;
-static kbutton_t in_buttons[16];
+// kbutton_t and the button state are per local player (cl_splitscreen.h)
+#define in_left			(cla->in.left)
+#define in_right		(cla->in.right)
+#define in_forward		(cla->in.forward)
+#define in_back			(cla->in.back)
+#define in_lookup		(cla->in.lookup)
+#define in_lookdown		(cla->in.lookdown)
+#define in_moveleft		(cla->in.moveleft)
+#define in_moveright	(cla->in.moveright)
+#define in_strafe		(cla->in.strafe)
+#define in_speed		(cla->in.speed)
+#define in_up			(cla->in.up)
+#define in_down			(cla->in.down)
+#define in_buttons		(cla->in.buttons)
+#define in_mlooking		(cla->in.mlooking)
 
 static cvar_t *cl_nodelta;
 
@@ -85,8 +87,6 @@ static cvar_t *m_yaw;
 static cvar_t *m_forward;
 static cvar_t *m_side;
 static cvar_t *m_filter;
-
-static qboolean in_mlooking;
 
 static void IN_CenterView( void ) {
 	cl.viewangles[PITCH] = -SHORT2ANGLE(cl.snap.ps.delta_angles[PITCH]);
@@ -549,13 +549,13 @@ static void CL_CmdButtons( usercmd_t *cmd ) {
 		in_buttons[i].wasPressed = qfalse;
 	}
 
-	if ( Key_GetCatcher() ) {
+	if ( CL_SplitKeyCatcher() || CL_SplitMenuOpen( cla->playerNum ) ) {	// splitscreen: this player's own menu/console state or engine overlay
 		cmd->buttons |= BUTTON_TALK;
 	}
 
 	// allow the game to know if any key at all is
 	// currently pressed, even if it isn't bound to anything
-	if ( anykeydown && Key_GetCatcher() == 0 ) {
+	if ( anykeydown && Key_GetCatcher() == 0 && cla->playerNum == 0 ) {
 		cmd->buttons |= BUTTON_ANY;
 	}
 }
@@ -609,6 +609,9 @@ static usercmd_t CL_CreateCmd( void ) {
 	// get basic movement from joystick
 	CL_JoystickMove( &cmd );
 
+	// splitscreen: this player's gamepad sticks
+	CL_GamepadMove( &cmd );
+
 	// check to make sure the angles haven't wrapped
 	if ( cl.viewangles[PITCH] - oldAngles[PITCH] > 90 ) {
 		cl.viewangles[PITCH] = oldAngles[PITCH] + 90;
@@ -634,18 +637,19 @@ static usercmd_t CL_CreateCmd( void ) {
 
 /*
 =================
-CL_CreateNewCommands
+CL_UpdateFrameMsec
 
-Create a new usercmd_t structure for this frame
+frame_msec is shared by all local players: compute it once per client
+frame, by whichever player creates the first usercmd of that frame.
 =================
 */
-static void CL_CreateNewCommands( void ) {
-	int			cmdNum;
+static void CL_UpdateFrameMsec( void ) {
+	static int lastFrame = -1;
 
-	// no need to create usercmds until we have a gamestate
-	if ( cls.state < CA_PRIMED ) {
-		return;
+	if ( lastFrame == cls.framecount && cla->playerNum != 0 ) {
+		return;	// another local player already did it this frame
 	}
+	lastFrame = cls.framecount;
 
 	frame_msec = com_frameTime - old_com_frameTime;
 
@@ -661,7 +665,25 @@ static void CL_CreateNewCommands( void ) {
 		frame_msec = 200;
 	}
 	old_com_frameTime = com_frameTime;
+}
 
+
+/*
+=================
+CL_CreateNewCommands
+
+Create a new usercmd_t structure for this frame
+=================
+*/
+static void CL_CreateNewCommands( void ) {
+	int			cmdNum;
+
+	// no need to create usercmds until we have a gamestate
+	if ( cls.state < CA_PRIMED ) {
+		return;
+	}
+
+	CL_UpdateFrameMsec();
 
 	// generate a command for this frame
 	cl.cmdNumber++;

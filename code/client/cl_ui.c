@@ -788,6 +788,15 @@ The ui module is making a system call
 ====================
 */
 static intptr_t CL_UISystemCalls( intptr_t *args ) {
+	if ( args[0] == UI_R_DRAWSTRETCHPIC ) {
+		CL_SplitUINotePic( args[9], VMF(1), VMF(2) );	// splitscreen: which stock page is up (R14a)
+	}
+	if ( cl_splitTraps | cla->playerNum ) {
+		intptr_t ret;
+		if ( CL_SplitUISyscall( args, &ret ) ) {
+			return ret;	// splitscreen: per-player menus (cl_splitui.c)
+		}
+	}
 	switch( args[0] ) {
 	case UI_ERROR:
 		Com_Error( ERR_DROP, "%s", (const char*)VMA(1) );
@@ -889,7 +898,7 @@ static intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return re.RegisterSkin( VMA(1) );
 
 	case UI_R_REGISTERSHADERNOMIP:
-		return re.RegisterShaderNoMip( VMA(1) );
+		return CL_SplitUINoteShader( VMA(1), re.RegisterShaderNoMip( VMA(1) ) );	// splitscreen: spots q3_ui's model page
 
 	case UI_R_CLEARSCENE:
 		re.ClearScene();
@@ -1009,6 +1018,7 @@ static intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return 0;
 
 	case UI_LAN_GETPINGQUEUECOUNT:
+		cla->uiLanTime = cls.realtime;	// splitscreen: a server browser is refreshing (pad X/Y = SPACE)
 		return LAN_GetPingQueueCount();
 
 	case UI_LAN_CLEARPING:
@@ -1016,6 +1026,7 @@ static intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return 0;
 
 	case UI_LAN_GETPING:
+		cla->uiLanTime = cls.realtime;	// splitscreen: a server browser is refreshing (pad X/Y = SPACE)
 		VM_CHECKBOUNDS( uivm, args[2], args[3] );
 		LAN_GetPing( args[1], VMA(2), args[3], VMA(4) );
 		return 0;
@@ -1026,6 +1037,7 @@ static intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return 0;
 
 	case UI_LAN_GETSERVERCOUNT:
+		cla->uiLanTime = cls.realtime;	// splitscreen: a server browser is refreshing (pad X/Y = SPACE)
 		return LAN_GetServerCount(args[1]);
 
 	case UI_LAN_GETSERVERADDRESSSTRING:
@@ -1049,6 +1061,7 @@ static intptr_t CL_UISystemCalls( intptr_t *args ) {
 		return LAN_ServerIsVisible( args[1], args[2] );
 
 	case UI_LAN_UPDATEVISIBLEPINGS:
+		cla->uiLanTime = cls.realtime;	// splitscreen: a server browser is refreshing (pad X/Y = SPACE)
 		return LAN_UpdateVisiblePings( args[1] );
 
 	case UI_LAN_RESETPINGS:
@@ -1221,6 +1234,7 @@ CL_ShutdownUI
 ====================
 */
 void CL_ShutdownUI( void ) {
+	CL_SplitShutdownUIs();	// splitscreen: extra players' menus share the hunk
 	Key_SetCatcher( Key_GetCatcher() & ~KEYCATCH_UI );
 	cls.uiStarted = qfalse;
 	if ( !uivm ) {
@@ -1230,6 +1244,12 @@ void CL_ShutdownUI( void ) {
 	VM_Free( uivm );
 	uivm = NULL;
 	FS_VM_CloseFiles( H_Q3UI );
+}
+
+
+// splitscreen: a menu instance for local player 2..8 (QVM only, like their cgames)
+vm_t *CL_SplitCreateUIVM( vmIndex_t index ) {
+	return VM_Create( index, CL_UISystemCalls, UI_DllSyscall, VMI_COMPILED );
 }
 
 
@@ -1315,6 +1335,9 @@ See if the current console command is claimed by the ui
 ====================
 */
 qboolean UI_GameCommand( void ) {
+	if ( cla->playerNum != 0 ) {
+		return CL_SplitUIGameCommand();	// splitscreen: that player's own menu
+	}
 	if ( !uivm ) {
 		return qfalse;
 	}

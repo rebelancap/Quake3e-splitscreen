@@ -1189,6 +1189,8 @@ Called every frame, even if not generating commands
 ==================
 */
 void IN_Frame( void ) {
+	IN_GamepadFrame();	// splitscreen: SDL2 gamepads (cl_splitscreen.h)
+
 	// post joystick events
 #ifdef USE_JOYSTICK
 	IN_JoyMove();

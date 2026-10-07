@@ -26,6 +26,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static portable_samplepair_t paintbuffer[PAINTBUFFER_SIZE];
 static int snd_vol;
+// splitscreen Server options: s_volume up to 1.5; a channel's volume x sample must stay inside an int
+// (32767 * 65535 < 2^31): loud merged loop sounds (volume 255) stop at the 1.0 level
+#define SND_VOL_MAX	65535
 
 // bk001119 - these not static, required by unix/snd_mixa.s
 int		*snd_p;
@@ -456,8 +459,8 @@ static void S_PaintChannelFrom16_scalar( channel_t *ch, const sfx_t *sc, int cou
 	}
 
 	if (!ch->doppler || ch->dopplerScale==1.0f) {
-		leftvol = ch->leftvol*snd_vol;
-		rightvol = ch->rightvol*snd_vol;
+		leftvol = MIN( ch->leftvol*snd_vol, SND_VOL_MAX );
+		rightvol = MIN( ch->rightvol*snd_vol, SND_VOL_MAX );
 		samples = chunk->sndChunk;
 		for ( i=0 ; i<count ; i++ ) {
 			data  = samples[sampleOffset++];
@@ -529,8 +532,8 @@ static void S_PaintChannelFromWavelet( channel_t *ch, sfx_t *sc, int count, int 
 	sndBuffer				*chunk;
 	short					*samples;
 
-	leftvol = ch->leftvol*snd_vol;
-	rightvol = ch->rightvol*snd_vol;
+	leftvol = MIN( ch->leftvol*snd_vol, SND_VOL_MAX );
+	rightvol = MIN( ch->rightvol*snd_vol, SND_VOL_MAX );
 
 	i = 0;
 	samp = &paintbuffer[ bufferOffset ];
@@ -572,8 +575,8 @@ static void S_PaintChannelFromADPCM( channel_t *ch, sfx_t *sc, int count, int sa
 	sndBuffer				*chunk;
 	short					*samples;
 
-	leftvol = ch->leftvol*snd_vol;
-	rightvol = ch->rightvol*snd_vol;
+	leftvol = MIN( ch->leftvol*snd_vol, SND_VOL_MAX );
+	rightvol = MIN( ch->rightvol*snd_vol, SND_VOL_MAX );
 
 	i = 0;
 	samp = &paintbuffer[ bufferOffset ];
@@ -621,8 +624,8 @@ static void S_PaintChannelFromMuLaw( channel_t *ch, sfx_t *sc, int count, int sa
 	byte					*samples;
 	float					ooff;
 
-	leftvol = ch->leftvol*snd_vol;
-	rightvol = ch->rightvol*snd_vol;
+	leftvol = MIN( ch->leftvol*snd_vol, SND_VOL_MAX );
+	rightvol = MIN( ch->rightvol*snd_vol, SND_VOL_MAX );
 
 	samp = &paintbuffer[ bufferOffset ];
 	chunk = sc->soundData;
@@ -684,7 +687,8 @@ void S_PaintChannels( int endtime ) {
 
 	snd_vol = s_volume->value * 255;
 
-	if ( (!gw_active && !gw_minimized && s_muteWhenUnfocused->integer) || (gw_minimized && s_muteWhenMinimized->integer) ) {
+	// (splitscreen Independent mode: every window keeps playing while another one has the focus)
+	if ( (!gw_active && !gw_minimized && s_muteWhenUnfocused->integer && !CL_IndepActive()) || (gw_minimized && s_muteWhenMinimized->integer) ) {
 		buffer = dma_buffer2;
 		if ( !muted ) {
 			// switching to muted, clear hardware buffer

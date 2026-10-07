@@ -1724,7 +1724,7 @@ qboolean VM_Compile( vm_t *vm, vmHeader_t *header )
 	}
 
 	if ( !vm->instructionPointers ) {
-		vm->instructionPointers = Hunk_Alloc( header->instructionCount * sizeof(vm->instructionPointers[0]), h_current );
+		vm->instructionPointers = VM_HunkAlloc( vm, VM_HUNK_CODE, header->instructionCount * sizeof(vm->instructionPointers[0]) );
 	}
 
 	VM_ReplaceInstructions( vm, inst );

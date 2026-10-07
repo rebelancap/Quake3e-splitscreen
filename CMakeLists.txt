@@ -136,6 +136,7 @@ IF(UNIX)
 
 	IF(USE_SDL)
 		AUX_SOURCE_DIRECTORY(code/sdl Q3_UI_SRCS)
+		list(APPEND Q3_UI_SRCS code/unix/unix_splitproc.c)
 	ELSE()
 		SET(Q3_UI_SRCS
 			code/unix/linux_glimp.c
@@ -176,6 +177,7 @@ ELSEIF(WIN32)
 		code/win32/win_minimize.c
 		code/win32/win_qgl.c
 		code/win32/win_snd.c
+		code/win32/win_splitproc.c
 		code/win32/win_wndproc.c)
 	IF(USE_VULKAN)
 		list(APPEND Q3_UI_SRCS code/win32/win_qvk.c)

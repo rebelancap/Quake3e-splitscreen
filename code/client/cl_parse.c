@@ -352,8 +352,9 @@ void CL_SystemInfoChanged( qboolean onlyGame ) {
 	// in some cases, outdated cp commands might get sent with this news serverId
 	cl.serverId = atoi( Info_ValueForKey( systemInfo, "sv_serverid" ) );
 
-	// don't set any vars when playing a demo
-	if ( clc.demoplaying ) {
+	// don't set any vars when playing a demo (or for extra local players:
+	// the filesystem and cvars follow player 1's connection)
+	if ( clc.demoplaying || cla->playerNum != 0 ) {
 		return;
 	}
 
@@ -363,6 +364,16 @@ void CL_SystemInfoChanged( qboolean onlyGame ) {
 	// parse/update fs_game in first place
 	s = Info_ValueForKey( systemInfo, "fs_game" );
 
+	// splitscreen R21: Urban Terror 4.3 servers send fs_game q3ut4 (the UrT engine's
+	// default); with q3ut4 as our base game that is the game already running, but it
+	// differs from our "" and forced a full game restart (Com_GameRestart: cvars reset,
+	// configs re-run -- which undid cl_allowDownload -- and the log closed) at every join
+	if ( FS_IsBaseGameName( s ) ) {
+		if ( onlyGame ) {
+			Com_Printf( "fs_game: server's \"%s\" is our base game, no game restart\n", s );
+		}
+		s = "";
+	}
 	if ( FS_InvalidGameDir( s ) ) {
 		Com_Printf( S_COLOR_YELLOW "WARNING: Server sent invalid fs_game value %s\n", s );
 	} else {
@@ -508,7 +519,9 @@ static void CL_ParseGamestate( msg_t *msg ) {
 	char			reconnectArgs[ MAX_CVAR_VALUE_STRING ];
 	qboolean		gamedirModified;
 
-	Con_Close();
+	if ( cla->playerNum == 0 ) {
+		Con_Close();
+	}
 
 	clc.connectPacketCount = 0;
 
@@ -584,6 +597,12 @@ static void CL_ParseGamestate( msg_t *msg ) {
 	clc.clientNum = MSG_ReadLong(msg);
 	// read the checksum feed
 	clc.checksumFeed = MSG_ReadLong( msg );
+
+	// extra local players share player 0's filesystem, cvars and downloads
+	if ( cla->playerNum != 0 ) {
+		CL_SplitscreenGamestate();
+		return;
+	}
 
 	// save old gamedir
 	Cvar_VariableStringBuffer( "fs_game", oldGame, sizeof( oldGame ) );
@@ -813,6 +832,10 @@ static void CL_ParseCommandString( msg_t *msg ) {
 		const char *text;
 		Cmd_TokenizeString( s );
 		if ( !Q_stricmp( Cmd_Argv(0), "disconnect" ) ) {
+			if ( cla->playerNum != 0 ) {
+				CL_SplitRequestDrop( cla->playerNum, Cmd_Argc() > 1 ? Cmd_Argv( 1 ) : "Server disconnected" );
+				return;
+			}
 			text = ( Cmd_Argc() > 1 ) ? va( "Server disconnected: %s", Cmd_Argv( 1 ) ) : "Server disconnected.";
 			Cvar_Set( "com_errorMessage", text );
 			Com_Printf( "%s\n", text );

@@ -170,6 +170,14 @@ typedef struct vmSymbol_s {
 
 //typedef void(*vmfunc_t)(void);
 
+// hunk blocks a QVM owns (VM_HunkAlloc)
+enum {
+	VM_HUNK_DATA,			// data segment
+	VM_HUNK_JTS,			// jump table targets
+	VM_HUNK_CODE,			// interpreter instructions / compiler instruction pointers
+	VM_HUNK_BLOCKS
+};
+
 typedef union vmFunc_u {
 	byte		*ptr;
 	void (*func)(void);
@@ -231,7 +239,15 @@ struct vm_s {
 	qboolean	forceDataMask;
 
 	int			privateFlag;
+
+	// hunk blocks of a QVM, see VM_HunkAlloc: given back to the next VM_Create of
+	// the same index by VM_Free while the hunk has not been cleared in between
+	void		*hunkBlock[VM_HUNK_BLOCKS];
+	uint32_t	hunkBlockSize[VM_HUNK_BLOCKS];
+	int			hunkBlockGen[VM_HUNK_BLOCKS];
 };
+
+void *VM_HunkAlloc( vm_t *vm, int block, uint32_t size );
 
 qboolean VM_Compile( vm_t *vm, vmHeader_t *header );
 int32_t VM_CallCompiled( vm_t *vm, int nargs, int32_t *args );

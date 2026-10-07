@@ -866,9 +866,16 @@ void Sys_CreateConsole( const char *title, int xPos, int yPos, qboolean useXYpos
 		SetWindowText( s_wcd.hWnd, AtoW( title ) );
 	}
 
+#ifndef DEDICATED
+	if ( Sys_SplitNoActivate() ) {
+		// splitscreen: a spawned player window (--child) or a test run (--noactivate) never takes the foreground
+	} else
+#endif
+	{
 	ShowWindow( s_wcd.hWnd, SW_SHOWDEFAULT );
 	UpdateWindow( s_wcd.hWnd );
 	SetForegroundWindow( s_wcd.hWnd );
+	}
 
 	SendMessage( s_wcd.hwndBuffer, EM_SETLIMITTEXT, MAX_CONSIZE, 0 );
 	maxConSize = SendMessage( s_wcd.hwndBuffer, EM_GETLIMITTEXT, 0, 0 );
@@ -881,7 +888,7 @@ void Sys_CreateConsole( const char *title, int xPos, int yPos, qboolean useXYpos
 
 	Sys_SetStatus( "Server is not running" );
 
-	s_wcd.visLevel = 1;
+	s_wcd.visLevel = IsWindowVisible( s_wcd.hWnd ) ? 1 : 0;
 }
 
 

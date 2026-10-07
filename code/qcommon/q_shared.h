@@ -26,7 +26,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // q_shared.h -- included first by ALL program modules.
 // A user mod should never modify this file
 
+#ifdef Q3E_SPLITSCREEN_VERSION // set by scripts/build.ps1 from VERSION
+#define Q3_VERSION            "Q3 1.32e splitscreen-" Q3E_SPLITSCREEN_VERSION
+#else
 #define Q3_VERSION            "Q3 1.32e"
+#endif
 #ifndef SVN_VERSION
   #define SVN_VERSION Q3_VERSION
 #endif

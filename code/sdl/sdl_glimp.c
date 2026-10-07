@@ -296,6 +296,14 @@ static int GLW_SetMode( int mode, const char *modeFS, qboolean fullscreen, qbool
 		flags |= SDL_WINDOW_BORDERLESS;
 	}
 
+	// splitscreen Independent mode (cl_splitindep.c): borderless at the window's tile
+	if ( CL_SplitWindowRect( &x, &y, NULL, NULL ) )
+		flags |= SDL_WINDOW_BORDERLESS;
+#ifdef __linux__
+	if ( Sys_SplitQuietWindow() ) // shown later without taking the focus
+		flags = ( flags & ~SDL_WINDOW_SHOWN ) | SDL_WINDOW_HIDDEN;
+#endif
+
 	//flags |= SDL_WINDOW_ALLOW_HIGHDPI;
 
 	colorBits = r_colorbits->value;
@@ -515,6 +523,9 @@ static int GLW_SetMode( int mode, const char *modeFS, qboolean fullscreen, qbool
 			SDL_FreeSurface( icon );
 		}
 #endif
+#ifdef __linux__
+		Sys_SplitShowWindow(); // splitscreen: a window created hidden is shown without the focus
+#endif
 	}
 	else
 	{
@@ -536,7 +547,9 @@ static int GLW_SetMode( int mode, const char *modeFS, qboolean fullscreen, qbool
 	glw_state.window_width = config->vidWidth;
 	glw_state.window_height = config->vidHeight;
 
-	SDL_WarpMouseInWindow( SDL_window, glw_state.window_width / 2, glw_state.window_height / 2 );
+	// (splitscreen: Independent-mode / --noactivate windows leave the pointer alone)
+	if ( !CL_SplitWindowRect( NULL, NULL, NULL, NULL ) && !( Sys_SplitLaunchFlags() & SPLIT_FLAG_NOACTIVATE ) )
+		SDL_WarpMouseInWindow( SDL_window, glw_state.window_width / 2, glw_state.window_height / 2 );
 
 	return RSERR_OK;
 }
@@ -550,6 +563,24 @@ GLimp_StartDriverAndSetMode
 static rserr_t GLimp_StartDriverAndSetMode( int mode, const char *modeFS, qboolean fullscreen, qboolean vulkan )
 {
 	rserr_t err;
+
+	// splitscreen Independent mode: borderless tiles, never exclusive fullscreen
+	if ( fullscreen && CL_SplitWindowRect( NULL, NULL, NULL, NULL ) )
+		fullscreen = qfalse;
+
+#ifdef __linux__
+	// ... placed by SDL's X11 driver (Wayland cannot place windows): restart SDL video on it
+	if ( SDL_window == NULL && Sys_SplitNeedX11() )	// NeedX11 switches the driver env + prints: only when the window is recreated
+	{
+		if ( SDL_glContext != NULL )
+		{
+			SDL_GL_DeleteContext( SDL_glContext );
+			SDL_glContext = NULL;
+		}
+		SDL_QuitSubSystem( SDL_INIT_VIDEO );
+		CL_IndepAreaChanged(); // the tiles again, measured on X11 (XWayland's screen)
+	}
+#endif
 
 	if ( fullscreen && in_nograb->integer )
 	{

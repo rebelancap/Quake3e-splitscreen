@@ -728,6 +728,7 @@ void SV_Init( void )
 	int index;
 
 	SV_AddOperatorCommands();
+	SV_SplitRulesInit();
 
 	if ( com_dedicated->integer )
 		SV_AddDedicatedCommands();
@@ -917,6 +918,7 @@ void SV_Shutdown( const char *finalmsg ) {
 	SV_RemoveOperatorCommands();
 	SV_MasterShutdown();
 	SV_ShutdownGameProgs();
+	SV_SplitRulesShutdown();
 	SV_InitChallenger();
 
 	// free current level

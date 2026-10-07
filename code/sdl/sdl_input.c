@@ -48,6 +48,12 @@ static cvar_t *in_joystickThreshold;
 static cvar_t *in_joystickNo;
 static cvar_t *in_joystickUseAnalog;
 
+// splitscreen: in_gamepad.c (cl_splitscreen.h) shares this SDL and holds its own
+// joystick/gamecontroller references, taken before IN_Init runs; quit only what
+// this file started itself
+static qboolean joyOwnJoystick;
+static qboolean joyOwnGameController;
+
 static cvar_t *j_pitch;
 static cvar_t *j_yaw;
 static cvar_t *j_forward;
@@ -560,6 +566,7 @@ static void IN_InitJoystick( void )
 			return;
 		}
 		Com_DPrintf("SDL_Init(SDL_INIT_JOYSTICK) passed.\n");
+		joyOwnJoystick = qtrue;
 	}
 
 	if (!SDL_WasInit(SDL_INIT_GAMECONTROLLER))
@@ -571,6 +578,7 @@ static void IN_InitJoystick( void )
 			return;
 		}
 		Com_DPrintf("SDL_Init(SDL_INIT_GAMECONTROLLER) passed.\n");
+		joyOwnGameController = qtrue;
 	}
 
 	total = SDL_NumJoysticks();
@@ -588,7 +596,10 @@ static void IN_InitJoystick( void )
 
 	if( !in_joystick->integer ) {
 		Com_DPrintf( "Joystick is not active.\n" );
-		SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+		if ( joyOwnGameController ) {
+			SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+			joyOwnGameController = qfalse;
+		}
 		return;
 	}
 
@@ -649,8 +660,16 @@ static void IN_ShutdownJoystick( void )
 		stick = NULL;
 	}
 
-	SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
-	SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
+	// splitscreen: only this file's own references (see joyOwn*), or a
+	// vid_restart would tear the gamecontroller subsystem down under in_gamepad.c
+	if ( joyOwnGameController ) {
+		SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+		joyOwnGameController = qfalse;
+	}
+	if ( joyOwnJoystick ) {
+		SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
+		joyOwnJoystick = qfalse;
+	}
 }
 
 
@@ -1304,7 +1323,7 @@ void HandleEvents( void )
 				switch ( e.window.event )
 				{
 					case SDL_WINDOWEVENT_MOVED:
-						if ( gw_active && !gw_minimized && !glw_state.isFullscreen ) {
+						if ( gw_active && !gw_minimized && !glw_state.isFullscreen && !CL_SplitWindowRect( NULL, NULL, NULL, NULL ) ) {
 							Cvar_SetIntegerValue( "vid_xpos", e.window.data1 );
 							Cvar_SetIntegerValue( "vid_ypos", e.window.data2 );
 						}
@@ -1357,6 +1376,7 @@ void IN_Frame( void )
 #ifdef USE_JOYSTICK
 	IN_JoyMove();
 #endif
+	IN_GamepadFrame();	// splitscreen: SDL2 gamepads (cl_splitscreen.h), shares this SDL
 
 	if ( Key_GetCatcher() & KEYCATCH_CONSOLE ) {
 		// temporarily deactivate if not in the game and

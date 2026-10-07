@@ -320,6 +320,11 @@ ifneq ($(HAVE_VM_COMPILED),true)
   BASE_CFLAGS += -DNO_VM_COMPILED
 endif
 
+# splitscreen: version stamp from VERSION (scripts/build.sh), as scripts/build.ps1 does
+ifneq ($(SPLITSCREEN_VERSION),)
+  BASE_CFLAGS += -DQ3E_SPLITSCREEN_VERSION=\\\"$(SPLITSCREEN_VERSION)\\\"
+endif
+
 ifneq ($(USE_RENDERER_DLOPEN),0)
   BASE_CFLAGS += -DUSE_RENDERER_DLOPEN
   BASE_CFLAGS += -DRENDERER_PREFIX=\\\"$(RENDERER_PREFIX)\\\"
@@ -1064,6 +1069,14 @@ Q3OBJ = \
   $(B)/client/cl_net_chan.o \
   $(B)/client/cl_parse.o \
   $(B)/client/cl_scrn.o \
+  $(B)/client/cl_splitscreen.o \
+  $(B)/client/cl_splitui.o \
+  $(B)/client/cl_splitmenu.o \
+  $(B)/client/cl_splitprofile.o \
+  $(B)/client/in_gamepad.o \
+  $(B)/client/cl_aimassist.o \
+  $(B)/client/cl_splitindep.o \
+  $(B)/client/cl_splitsrv.o \
   $(B)/client/cl_ui.o \
   $(B)/client/cl_avi.o \
   $(B)/client/cl_jpeg.o \
@@ -1108,6 +1121,7 @@ Q3OBJ = \
   $(B)/client/sv_net_chan.o \
   $(B)/client/sv_snapshot.o \
   $(B)/client/sv_world.o \
+  $(B)/client/sv_splitrules.o \
   \
   $(B)/client/q_math.o \
   $(B)/client/q_shared.o \
@@ -1214,6 +1228,7 @@ ifdef MINGW
     $(B)/client/win_main.o \
     $(B)/client/win_shared.o \
     $(B)/client/win_syscon.o \
+    $(B)/client/win_splitproc.o \
     $(B)/client/win_resource.o
 
 ifeq ($(USE_SDL),1)
@@ -1254,7 +1269,8 @@ ifeq ($(USE_SDL),1)
         $(B)/client/sdl_glimp.o \
         $(B)/client/sdl_gamma.o \
         $(B)/client/sdl_input.o \
-        $(B)/client/sdl_snd.o
+        $(B)/client/sdl_snd.o \
+        $(B)/client/unix_splitproc.o
 else # !USE_SDL
     Q3OBJ += \
         $(B)/client/linux_glimp.o \
@@ -1313,6 +1329,7 @@ Q3DOBJ = \
   $(B)/ded/sv_net_chan.o \
   $(B)/ded/sv_snapshot.o \
   $(B)/ded/sv_world.o \
+  $(B)/ded/sv_splitrules.o \
   \
   $(B)/ded/cm_load.o \
   $(B)/ded/cm_patch.o \

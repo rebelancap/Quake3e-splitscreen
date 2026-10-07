@@ -400,6 +400,36 @@ qboolean FS_Initialized( void ) {
 
 /*
 =================
+FS_IsDownloadGamedir (splitscreen R21)
+
+Urban Terror 4.3's client keeps the maps it downloads in q3ut4/download/ and loads
+them from there (a search path below q3ut4).  Paks there come from servers, so
+like UrT's engine nothing that runs code or sets cvars is read from them.
+=================
+*/
+static qboolean FS_IsDownloadGamedir( const char *gamedir ) {
+	const char *p;
+
+	if ( gamedir == NULL || ( p = strrchr( gamedir, '/' ) ) == NULL ) {
+		return qfalse;
+	}
+	return Q_stricmp( p + 1, "download" ) == 0 ? qtrue : qfalse;
+}
+
+
+static qboolean FS_DownloadDirBlocks( const char *gamedir, const char *filename ) {
+	const char *ext;
+
+	if ( !FS_IsDownloadGamedir( gamedir ) ) {
+		return qfalse;
+	}
+	ext = COM_GetExtension( filename );
+	return ( !Q_stricmp( ext, "qvm" ) || !Q_stricmp( ext, "menu" ) || !Q_stricmp( ext, "cfg" ) ) ? qtrue : qfalse;
+}
+
+
+/*
+=================
 FS_PakIsPure
 =================
 */
@@ -1612,7 +1642,8 @@ Check if file should NOT be loaded from pk3 or pk3dir archives
 */
 static qboolean FS_BannedPakFile( const char *filename )
 {
-	if ( !strcmp( filename, "autoexec.cfg" ) || !strcmp( filename, Q3CONFIG_CFG ) )
+	if ( !strcmp( filename, "autoexec.cfg" ) || !strcmp( filename, Q3CONFIG_CFG )
+		|| !strcmp( filename, Q3CONFIG_CFG_UPSTREAM ) || !strcmp( filename, AUTOEXEC_SS_CFG ) )
 		return qtrue;
 	else
 		return qfalse;
@@ -1678,6 +1709,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 				// skip non-pure files
 				if ( !FS_PakIsPure( search->pack ) )
 					continue;
+				if ( FS_DownloadDirBlocks( search->pack->pakGamename, filename ) )
+					continue;
 				// look through all the pak file elements
 				pak = search->pack;
 				pakFile = pak->hashTable[hash];
@@ -1694,6 +1727,8 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 					continue;
 				}
 				dir = search->dir;
+				if ( FS_DownloadDirBlocks( dir->gamedir, filename ) )
+					continue;
 				netpath = FS_BuildOSPath( dir->path, dir->gamedir, filename );
 				temp = Sys_FOpen( netpath, "rb" );
 				if ( temp ) {
@@ -1723,6 +1758,9 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			if ( !FS_PakIsPure( search->pack ) ) {
 				continue;
 			}
+			if ( FS_DownloadDirBlocks( search->pack->pakGamename, filename ) ) {
+				continue;
+			}
 			// look through all the pak file elements
 			pak = search->pack;
 			pakFile = pak->hashTable[hash];
@@ -1740,6 +1778,9 @@ int FS_FOpenFileRead( const char *filename, fileHandle_t *file, qboolean uniqueF
 			}
 			// check a file in the directory tree
 			dir = search->dir;
+			if ( FS_DownloadDirBlocks( dir->gamedir, filename ) ) {
+				continue;
+			}
 
 			netpath = FS_BuildOSPath( dir->path, dir->gamedir, filename );
 
@@ -2383,7 +2424,8 @@ static pack_t *pakHashTable[ PK3_HASH_SIZE ];
 
 #ifdef USE_PK3_CACHE_FILE
 
-#define CACHE_FILE_NAME "pk3cache.dat"
+// splitscreen Independent mode: a player window keeps its own (pk3cache-child<N>.dat)
+#define CACHE_FILE_NAME ( Com_SplitChildTag()[0] ? va( "pk3cache-%s.dat", Com_SplitChildTag() ) : "pk3cache.dat" )
 
 #define CACHE_SYNC_CONDITION ( fs_paksReaded + fs_paksSkipped + fs_paksReleased >= 8 )
 
@@ -4745,6 +4787,23 @@ qboolean FS_IsPureChecksum( int sum )
 
 /*
 ================
+FS_AddUrTDownloadDir (splitscreen R21)
+
+Urban Terror 4.3 (ioq3-for-UrbanTerror-4 files.c) adds <path>/q3ut4/download as a
+search path below <path>/q3ut4: the maps its client downloaded live there.  Added
+first so <path>/q3ut4 stays the game directory (fs_gamedir = the last one added).
+================
+*/
+static void FS_AddUrTDownloadDir( const char *path, const char *game ) {
+	if ( Q_stricmp( game, "q3ut4" ) ) {
+		return;
+	}
+	FS_AddGameDirectory( path, "q3ut4/download" );
+}
+
+
+/*
+================
 FS_Startup
 ================
 */
@@ -4819,6 +4878,8 @@ static void FS_Startup( void ) {
 #endif
 
 	// add search path elements in reverse priority order
+	// (splitscreen R21: in Urban Terror, <path>/q3ut4/download goes in just below
+	// each <path>/q3ut4, see FS_AddUrTDownloadDir)
 	if (fs_steampath->string[0]) {
 		// handle multiple basegames:
 		for (i = 0; i < basegame_cnt; i++) {
@@ -4829,6 +4890,7 @@ static void FS_Startup( void ) {
 	if (fs_basepath->string[0]) {
 		// handle multiple basegames:
 		for (i = 0; i < basegame_cnt; i++) {
+			FS_AddUrTDownloadDir( fs_basepath->string, basegames[i] );
 			FS_AddGameDirectory( fs_basepath->string, basegames[i] );
 		}
 	}
@@ -4849,6 +4911,7 @@ static void FS_Startup( void ) {
 	if ( fs_homepath->string[0] && Q_stricmp( fs_homepath->string, fs_basepath->string ) ) {
 		// handle multiple basegames:
 		for ( i = 0; i < basegame_cnt; i++ ) {
+			FS_AddUrTDownloadDir( fs_homepath->string, basegames[i] );
 			FS_AddGameDirectory( fs_homepath->string, basegames[i] );
 		}
 	}
@@ -4859,9 +4922,11 @@ static void FS_Startup( void ) {
 			FS_AddGameDirectory( fs_steampath->string, fs_gamedirvar->string );
 		}
 		if ( fs_basepath->string[0] != '\0' ) {
+			FS_AddUrTDownloadDir( fs_basepath->string, fs_gamedirvar->string );
 			FS_AddGameDirectory( fs_basepath->string, fs_gamedirvar->string );
 		}
 		if ( fs_homepath->string[0] != '\0' && Q_stricmp( fs_homepath->string, fs_basepath->string ) ) {
+			FS_AddUrTDownloadDir( fs_homepath->string, fs_gamedirvar->string );
 			FS_AddGameDirectory( fs_homepath->string, fs_gamedirvar->string );
 		}
 	}
@@ -5153,7 +5218,8 @@ const char *FS_ReferencedPakChecksums( void ) {
 			if ( search->pack->exclude ) {
 				continue;
 			}
-			if ( (search->pack->referenced & FS_PURE_REF) || !FS_IsBaseGame( search->pack->pakGamename ) ) {
+			// splitscreen R21: a downloaded UrT map counts only when the server uses it
+			if ( (search->pack->referenced & FS_PURE_REF) || ( !FS_IsBaseGame( search->pack->pakGamename ) && !FS_IsDownloadGamedir( search->pack->pakGamename ) ) ) {
 				Q_strcat( info, sizeof( info ), va( "%i ", search->pack->checksum ) );
 			}
 		}
@@ -5280,7 +5346,7 @@ const char *FS_ReferencedPakNames( void ) {
 			if ( search->pack->exclude ) {
 				continue;
 			}
-			if ( ( search->pack->referenced & FS_PURE_REF ) || !FS_IsBaseGame( search->pack->pakGamename ) ) {
+			if ( ( search->pack->referenced & FS_PURE_REF ) || ( !FS_IsBaseGame( search->pack->pakGamename ) && !FS_IsDownloadGamedir( search->pack->pakGamename ) ) ) {
 				pakName = va( "%s/%s", search->pack->pakGamename, search->pack->pakBasename );
 				if ( *info != '\0' ) {
 					Q_strcat( info, sizeof( info ), " " );
@@ -5448,7 +5514,78 @@ void FS_PureServerSetReferencedPaks( const char *pakSums, const char *pakNames )
 	if ( d < c )
 		c = d;
 
-	fs_numServerReferencedPaks = c;	
+	fs_numServerReferencedPaks = c;
+}
+
+
+/*
+================
+FS_UrTDetect / FS_UrTGame (splitscreen, R18)
+
+Urban Terror 4.3's own folder (UrbanTerror43\q3ut4, no baseq3): an engine
+started there with no fs_basegame / fs_game on its command line plays UrT,
+so users just drop the executables beside q3ut4\ and run them.
+================
+*/
+static qboolean fs_urtDetected;
+
+static qboolean FS_BaseHasDir( const char *base, const char *dir ) {
+	char **dirs;
+	int i, n;
+	qboolean found = qfalse;
+
+	dirs = Sys_ListFiles( base, "/", NULL, &n, qfalse );
+	for ( i = 0; i < n && !found; i++ ) {
+		if ( !Q_stricmp( dirs[i], dir ) ) {
+			found = qtrue;
+		}
+	}
+	Sys_FreeFileList( dirs );
+	return found;
+}
+
+
+static void FS_UrTDetect( void ) {
+	const char *base;
+
+	if ( Cvar_VariableString( "fs_basegame" )[0] || Cvar_VariableString( "fs_game" )[0] ) {
+		return;		// the user (or DEFAULT_GAME) chose the game
+	}
+	base = Cvar_VariableString( "fs_basepath" );
+	if ( !base[0] ) {
+		base = Sys_DefaultBasePath();
+	}
+	if ( !base || !base[0] || !FS_BaseHasDir( base, "q3ut4" ) || FS_BaseHasDir( base, BASEGAME ) ) {
+		return;
+	}
+	Cvar_Get( "fs_basegame", "q3ut4", CVAR_USER_CREATED );
+	fs_urtDetected = qtrue;
+}
+
+
+// qtrue once when FS_UrTDetect picked q3ut4 (Com_Init logs it once the log is open)
+qboolean FS_UrTDetected( void ) {
+	return fs_urtDetected;
+}
+
+
+// the running game is Urban Terror (q3ut4 as the base game or the mod)
+/*
+================
+FS_IsBaseGameName (splitscreen R21)
+
+The name is one of our base games (fs_basegame), e.g. "q3ut4" when Urban Terror is
+the base game: a server's systeminfo fs_game q3ut4 then needs no game restart.
+================
+*/
+qboolean FS_IsBaseGameName( const char *game ) {
+	return ( game && *game && FS_IsBaseGame( game ) ) ? qtrue : qfalse;
+}
+
+
+qboolean FS_UrTGame( void ) {
+	return ( !Q_stricmp( Cvar_VariableString( "fs_game" ), "q3ut4" )
+		|| Q_stristr( Cvar_VariableString( "fs_basegame" ), "q3ut4" ) ) ? qtrue : qfalse;
 }
 
 
@@ -5474,6 +5611,7 @@ void FS_InitFilesystem( void ) {
 #ifndef USE_HANDLE_CACHE
 	Com_StartupVariable( "fs_locked" );
 #endif
+	FS_UrTDetect();
 
 //#ifdef _WIN32
 // 	_setmaxstdio( 2048 );
@@ -5531,6 +5669,7 @@ void FS_Restart( int checksumFeed ) {
 	if ( Q_stricmp(fs_gamedirvar->string, lastValidGame) && execConfig ) {
 		// skip the q3config.cfg if "safe" is on the command line
 		if ( !Com_SafeMode() ) {
+			Com_SeedSplitConfig();
 			Cbuf_AddText( "exec " Q3CONFIG_CFG "\n" );
 		}
 	}

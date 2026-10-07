@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Injected into SDL2's own VisualC\SDL\SDL.vcxproj by scripts/build.ps1
+  (/p:ForceImportBeforeCppTargets, with /p:ConfigurationType=StaticLibrary)
+  so the unmodified SDL2 source release builds as a static library for the
+  Windows client exes (code/client/in_gamepad.c, Q3E_SDL_STATIC):
+    - no DLL_EXPORT (nothing exported from our exe), SDL_STATIC_LIB
+      (no SDL_mslibc.c memcpy/memset/_fltused replacements),
+    - HAVE_LIBC: SDL uses the C runtime the exe links,
+    - a few SDL symbols renamed (SDL2_ prefix) that the engine defines too
+      (q_math.c MatrixMultiply, win_snd.c / win_input.c DirectSound and
+      DirectInput GUIDs): otherwise LNK2005 in the client link,
+    - static CRT (/MT) like the engine; /Zl (OmitDefaultLibName, SDL's
+      own setting) keeps the lib CRT-neutral at link time.
+  Release|x64 -> SDL2-static.lib (/MT, NDEBUG) for the Release clients,
+  Debug|x64 -> SDL2-static-debug.lib (/MTd, _DEBUG) for the Debug clients
+  (build.ps1 builds and passes the one matching -Configuration).
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <SdlRenames>MatrixMultiply=SDL2_MatrixMultiply;CLSID_DirectSound=SDL2_CLSID_DirectSound;CLSID_DirectSound8=SDL2_CLSID_DirectSound8;IID_IDirectSound=SDL2_IID_IDirectSound;IID_IDirectSound8=SDL2_IID_IDirectSound8;GUID_XAxis=SDL2_GUID_XAxis;GUID_YAxis=SDL2_GUID_YAxis;GUID_ZAxis=SDL2_GUID_ZAxis;GUID_SysMouse=SDL2_GUID_SysMouse</SdlRenames>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' != 'Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>SDL_STATIC_LIB;HAVE_LIBC=1;NDEBUG;_WINDOWS;$(SdlRenames)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <OmitDefaultLibName>true</OmitDefaultLibName>
+      <DebugInformationFormat>None</DebugInformationFormat>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
+    <ClCompile>
+      <PreprocessorDefinitions>SDL_STATIC_LIB;HAVE_LIBC=1;_DEBUG;_WINDOWS;$(SdlRenames)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <OmitDefaultLibName>true</OmitDefaultLibName>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>

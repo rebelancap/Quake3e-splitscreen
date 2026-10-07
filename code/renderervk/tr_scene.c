@@ -69,6 +69,22 @@ void R_InitNextFrame( void ) {
 
 /*
 ====================
+R_PrintSceneTotals
+
+splitscreen (r_speeds 1): how much of the per-frame arrays that every scene
+of the frame shares (one world view per local player) the last frame used.
+====================
+*/
+void R_PrintSceneTotals( int commandBytes, int maxCommandBytes ) {
+	ri.Printf( PRINT_ALL, "frame: %i scenes, ents %i/%i, dlights %i/%i, polys %i/%i, polyverts %i/%i, drawsurfs %i/%i, cmds %iK/%iK\n",
+		tr.frameSceneNum, r_numentities, (int)ARRAY_LEN( backEndData->entities ), r_numdlights, (int)ARRAY_LEN( backEndData->dlights ),
+		r_numpolys, max_polys, r_numpolyverts, max_polyverts, r_firstSceneDrawSurf, MAX_DRAWSURFS,
+		commandBytes / 1024, maxCommandBytes / 1024 );
+}
+
+
+/*
+====================
 RE_ClearScene
 
 ====================
@@ -214,7 +230,7 @@ void RE_AddRefEntityToScene( const refEntity_t *ent, qboolean intShaderTime ) {
 	if ( !tr.registered ) {
 		return;
 	}
-	if ( r_numentities >= MAX_REFENTITIES ) {
+	if ( r_numentities >= MAX_FRAME_REFENTITIES || r_numentities - r_firstSceneEntity >= MAX_REFENTITIES ) {
 		ri.Printf( PRINT_DEVELOPER, "RE_AddRefEntityToScene: Dropping refEntity, reached MAX_REFENTITIES\n" );
 		return;
 	}
@@ -249,7 +265,7 @@ static void RE_AddDynamicLightToScene( const vec3_t org, float intensity, float 
 	if ( !tr.registered ) {
 		return;
 	}
-	if ( r_numdlights >= ARRAY_LEN( backEndData->dlights ) ) {
+	if ( r_numdlights >= ARRAY_LEN( backEndData->dlights ) || r_numdlights - r_firstSceneDlight >= MAX_SCENE_DLIGHTS ) {
 		return;
 	}
 	if ( intensity <= 0 ) {
@@ -306,7 +322,7 @@ void RE_AddLinearLightToScene( const vec3_t start, const vec3_t end, float inten
 	if ( !tr.registered ) {
 		return;
 	}
-	if ( r_numdlights >= ARRAY_LEN( backEndData->dlights ) ) {
+	if ( r_numdlights >= ARRAY_LEN( backEndData->dlights ) || r_numdlights - r_firstSceneDlight >= MAX_SCENE_DLIGHTS ) {
 		return;
 	}
 	if ( intensity <= 0 ) {

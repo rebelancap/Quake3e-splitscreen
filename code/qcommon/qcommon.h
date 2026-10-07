@@ -173,8 +173,12 @@ typedef enum {
 
 typedef enum {
 	NS_CLIENT,
-	NS_SERVER
+	NS_SERVER,
+	NS_CLIENT2,		// splitscreen: extra local players' own UDP sockets
+	NS_CLIENT_LAST = NS_CLIENT2 + 6
 } netsrc_t;
+
+#define NET_IsExtraClientSock( s ) ( (s) >= NS_CLIENT2 && (s) <= NS_CLIENT_LAST )
 
 
 #ifdef USE_IPV6
@@ -390,9 +394,18 @@ typedef enum {
 #ifndef USE_DEDICATED
 	VM_CGAME,
 	VM_UI,
+	VM_CGAME2,	// splitscreen: cgame instances of local players 2..8
+	VM_CGAME8 = VM_CGAME2 + 6,
+	VM_UI2,		// splitscreen: menu (ui) instances of local players 2..8
+	VM_UI8 = VM_UI2 + 6,
 #endif
 	VM_COUNT
 } vmIndex_t;
+
+#ifndef USE_DEDICATED
+#define VM_IsCgameIndex( i ) ( (i) == VM_CGAME || ( (i) >= VM_CGAME2 && (i) <= VM_CGAME8 ) )
+#define VM_IsUIIndex( i ) ( (i) == VM_UI || ( (i) >= VM_UI2 && (i) <= VM_UI8 ) )
+#endif
 
 // we don't need more than 4 arguments (counting callnum) for vmMain, at least in Vanilla Quake3
 #define MAX_VMMAIN_CALL_ARGS 4
@@ -612,6 +625,8 @@ void	Cvar_VariableStringBufferSafe( const char *var_name, char *buffer, int bufs
 // returns an empty string if not defined
 
 unsigned Cvar_Flags( const char *var_name );
+const char *Cvar_DefaultString( const char *var_name );
+// splitscreen: the reset (default) value of a cvar, NULL if it does not exist
 // returns CVAR_NONEXISTENT if cvar doesn't exist or the flags of that particular CVAR.
 
 void	Cvar_CommandCompletion( void(*callback)(const char *s) );
@@ -707,13 +722,18 @@ typedef enum {
 
 #define	MAX_FOUND_FILES		0x5000
 
+// splitscreen: our executables archive to their own file so they can share a
+// home path with upstream's (seeded once from upstream's, Com_SeedSplitConfig)
 #ifdef DEDICATED
-#define Q3CONFIG_CFG "q3config_server.cfg"
+#define Q3CONFIG_CFG "q3config_server-ss.cfg"
+#define Q3CONFIG_CFG_UPSTREAM "q3config_server.cfg"
 #define CONSOLE_HISTORY_FILE "q3history_server"
 #else
-#define Q3CONFIG_CFG "q3config.cfg"
+#define Q3CONFIG_CFG "q3config-ss.cfg"
+#define Q3CONFIG_CFG_UPSTREAM "q3config.cfg"
 #define CONSOLE_HISTORY_FILE "q3history"
 #endif
+#define AUTOEXEC_SS_CFG "autoexec-ss.cfg"
 
 typedef	time_t fileTime_t;
 #if defined  (_MSC_VER) && defined (__clang__)
@@ -725,6 +745,9 @@ typedef	off_t  fileOffset_t;
 qboolean FS_Initialized( void );
 
 void	FS_InitFilesystem ( void );
+qboolean	FS_UrTDetected( void );	// splitscreen R18: q3ut4 picked as the base game (UrbanTerror43 folder)
+qboolean	FS_UrTGame( void );		// splitscreen R18: the game is Urban Terror (fs_basegame or fs_game q3ut4)
+qboolean	FS_IsBaseGameName( const char *game );	// splitscreen R21: game names one of fs_basegame's games
 void	FS_Shutdown( qboolean closemfp );
 
 qboolean	FS_ConditionalRestart( int checksumFeed, qboolean clientRestart );
@@ -1004,6 +1027,10 @@ int			Com_MD5Addr( const netadr_t *addr, int timestamp );
 
 qboolean	Com_CDKeyValidate( const char *key, const char *checksum );
 qboolean	Com_EarlyParseCmdLine( char *commandLine, char *con_title, int title_size, int *vid_xpos, int *vid_ypos );
+// splitscreen Independent mode: a spawned player window's command line carries ~30 "+set"s with
+// full paths, so the command line holds more than MAX_STRING_CHARS / 32 lines
+#define	MAX_CMDLINE_CHARS	8192	// bytes of the command line kept (win32 WinMain)
+#define	MAX_CONSOLE_LINES	64		// "+" separated command-line commands
 int			Com_Split( char *in, char **out, int outsz, int delim );
 
 int			Com_Filter( const char *filter, const char *name );
@@ -1020,6 +1047,8 @@ void		Com_StartupVariable( const char *match );
 // only a set with the exact name.  Only used during startup.
 
 void		Com_WriteConfiguration( void );
+const char	*Com_SplitChildTag( void );	// splitscreen Independent mode: "child<N>" in a player window, else ""
+void		Com_SeedSplitConfig( void );	// splitscreen: first-run copy of Q3CONFIG_CFG_UPSTREAM into Q3CONFIG_CFG
 int			Com_HexStrToInt( const char *str );
 qboolean	Com_GetHashColor( const char *str, byte *color );
 
@@ -1149,6 +1178,7 @@ void Hunk_ClearTempMemory( void );
 void *Hunk_AllocateTempMemory( size_t size );
 void Hunk_FreeTempMemory( void *buf );
 int	Hunk_MemoryRemaining( void );
+int	Hunk_Generation( void );
 void Hunk_Log( void );
 int  Hunk_GetTempMemory( void **buf );
 void *Hunk_MoveTempMemory( ha_pref preference );
@@ -1188,6 +1218,8 @@ void CL_MouseEvent( int dx, int dy /*, int time*/ );
 void CL_JoystickEvent( int axis, int value, int time );
 
 void CL_PacketEvent( const netadr_t *from, msg_t *msg );
+void CL_PacketEventSock( netsrc_t sock, const netadr_t *from, msg_t *msg );	// splitscreen
+void CL_SplitCatchError( int code, const char *message );	// splitscreen, may not return
 
 void CL_ConsolePrint( const char *text );
 
@@ -1246,6 +1278,11 @@ void SV_PacketEvent( const netadr_t *from, msg_t *msg );
 int SV_FrameMsec( void );
 qboolean SV_GameCommand( void );
 int SV_SendQueuedPackets( void );
+int SV_SplitRulesLayout( void );		// splitscreen Server options: 0 none (UrT...), 1 baseq3, 2 missionpack, -1 no level
+qboolean SV_SplitBotsEnabled( void );
+qboolean SV_SplitCheatsForced( void );	// sv_cheats is on only for god mode
+const char *SV_SplitModInstagib( void );	// the game's own instagib cvar, "" = none (R16)
+int SV_SplitMaxClients( void );			// the running server's client slots (sv_maxclients is latched)
 
 void SV_AddDedicatedCommands( void );
 void SV_RemoveDedicatedCommands( void );
@@ -1330,7 +1367,11 @@ void	Sys_DisplaySystemConsole( qboolean show );
 void	Sys_ShowConsole( int level, qboolean quitOnClose );
 void	Sys_SetErrorText( const char *text );
 
-void	Sys_SendPacket( int length, const void *data, const netadr_t *to );
+void	Sys_SendPacket( netsrc_t sock, int length, const void *data, const netadr_t *to );
+#ifndef DEDICATED
+qboolean	NET_OpenClientSocket( netsrc_t sock );	// splitscreen extra player sockets
+void		NET_CloseClientSocket( netsrc_t sock );
+#endif
 
 qboolean	Sys_StringToAdr( const char *s, netadr_t *a, netadrtype_t family );
 //Does NOT parse port numbers, only base addresses.

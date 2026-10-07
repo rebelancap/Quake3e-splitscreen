@@ -411,7 +411,7 @@ void S_Init( void )
 	Com_Printf( "------ Initializing Sound ------\n" );
 
 	s_volume = Cvar_Get( "s_volume", "0.8", CVAR_ARCHIVE );
-	Cvar_CheckRange( s_volume, "0", "1", CV_FLOAT );
+	Cvar_CheckRange( s_volume, "0", "1.5", CV_FLOAT );	// splitscreen: up to 150 % (Server options page)
 	Cvar_SetDescription( s_volume, "Sets master volume for all game audio." );
 	s_musicVolume = Cvar_Get( "s_musicVolume", "0.25", CVAR_ARCHIVE );
 	Cvar_CheckRange( s_musicVolume, "0", "1", CV_FLOAT );

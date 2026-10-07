@@ -398,6 +398,7 @@ static intptr_t SV_GameSystemCalls( intptr_t *args ) {
 		return Sys_Milliseconds();
 	case G_CVAR_REGISTER:
 		Cvar_Register( VMA(1), VMA(2), VMA(3), args[4], gvm->privateFlag ); 
+		SV_SplitGameCvar( (const char *)VMA(2) );	// splitscreen Server options: the game's own instagib cvar
 		return 0;
 	case G_CVAR_UPDATE:
 		Cvar_Update( VMA(1), gvm->privateFlag );
@@ -1046,7 +1047,7 @@ static void SV_InitGameVM( qboolean restart ) {
 	int		i;
 
 	// start the entity parsing at the beginning
-	sv.entityParsePoint = CM_EntityString();
+	sv.entityParsePoint = SV_SplitEntityString( restart );	// splitscreen Server options (design 18): weapons / instagib
 
 	// clear all gentity pointers that might still be set from
 	// a previous level

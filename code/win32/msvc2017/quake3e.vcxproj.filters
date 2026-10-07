@@ -37,6 +37,30 @@
     <ClCompile Include="..\..\client\cl_scrn.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitscreen.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitmenu.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitprofile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\in_gamepad.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_aimassist.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitindep.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\client\cl_splitsrv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\client\cl_ui.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -160,6 +184,9 @@
     <ClCompile Include="..\..\server\sv_world.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\server\sv_splitrules.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\qcommon\unzip.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -193,6 +220,9 @@
     <ClCompile Include="..\win_syscon.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\win_splitproc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\win_wndproc.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -220,6 +250,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\client\client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\client\cl_splitscreen.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\qcommon\cm_local.h">

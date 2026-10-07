@@ -48,6 +48,7 @@ CL_GetGlconfig
 */
 static void CL_GetGlconfig( glconfig_t *glconfig ) {
 	*glconfig = cls.glconfig;
+	CL_SplitGlconfig( glconfig );	// splitscreen: the cgame's screen is its viewport
 }
 
 
@@ -280,6 +281,10 @@ rescan:
 	argc = Cmd_Argc();
 
 	if ( !strcmp( cmd, "disconnect" ) ) {
+		if ( cla->playerNum != 0 ) {
+			CL_SplitRequestDrop( cla->playerNum, argc >= 2 ? Cmd_Argv( 1 ) : "Server disconnected" );
+			return qfalse;	// only this local player was dropped
+		}
 		// https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=552
 		// allow server to indicate why they were disconnected
 		if ( argc >= 2 )
@@ -386,19 +391,27 @@ CL_ShutdonwCGame
 */
 void CL_ShutdownCGame( void ) {
 
-	Key_SetCatcher( Key_GetCatcher( ) & ~KEYCATCH_CGAME );
+	if ( cla->playerNum == 0 ) {
+		Key_SetCatcher( Key_GetCatcher( ) & ~KEYCATCH_CGAME );
+	}
+	CL_SplitCGameShutdown();	// splitscreen: per-player catcher bit, screen size
 	cls.cgameStarted = qfalse;
 
 	if ( !cgvm ) {
 		return;
 	}
 
-	re.VertexLighting( qfalse );
+	if ( cla->playerNum == 0 ) {
+		re.VertexLighting( qfalse );
+	}
 
 	VM_Call( cgvm, 0, CG_SHUTDOWN );
 	VM_Free( cgvm );
 	cgvm = NULL;
-	FS_VM_CloseFiles( H_CGAME );
+	if ( cla->playerNum == 0 ) {
+		// H_CGAME handles are shared by all local players' cgames
+		FS_VM_CloseFiles( H_CGAME );
+	}
 }
 
 
@@ -475,6 +488,12 @@ The cgame module is making a system call
 ====================
 */
 static intptr_t CL_CgameSystemCalls( intptr_t *args ) {
+	if ( cl_splitTraps | cla->playerNum | cl_splitInPlaceInit ) {
+		intptr_t ret;
+		if ( CL_SplitSyscall( args, &ret ) ) {
+			return ret;	// splitscreen: handled per local player (cl_splitscreen.c)
+		}
+	}
 	switch( args[0] ) {
 	case CG_PRINT:
 		Com_Printf( "%s", (const char*)VMA(1) );
@@ -642,13 +661,13 @@ static intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		re.AddAdditiveLightToScene( VMA(1), VMF(2), VMF(3), VMF(4), VMF(5) );
 		return 0;
 	case CG_R_RENDERSCENE:
-		re.RenderScene( VMA(1) );
+		CL_SplitRenderScene( VMA(1) );
 		return 0;
 	case CG_R_SETCOLOR:
 		re.SetColor( VMA(1) );
 		return 0;
 	case CG_R_DRAWSTRETCHPIC:
-		re.DrawStretchPic( VMF(1), VMF(2), VMF(3), VMF(4), VMF(5), VMF(6), VMF(7), VMF(8), args[9] );
+		CL_SplitDrawStretchPic( VMF(1), VMF(2), VMF(3), VMF(4), VMF(5), VMF(6), VMF(7), VMF(8), args[9] );
 		return 0;
 	case CG_R_MODELBOUNDS:
 		re.ModelBounds( args[1], VMA(2), VMA(3) );
@@ -859,7 +878,9 @@ void CL_InitCGame( void ) {
 	t1 = Sys_Milliseconds();
 
 	// put away the console
-	Con_Close();
+	if ( cla->playerNum == 0 ) {
+		Con_Close();
+	}
 
 	// find the current mapname
 	info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
@@ -871,14 +892,15 @@ void CL_InitCGame( void ) {
 
 	// load the dll or bytecode
 	interpret = Cvar_VariableIntegerValue( "vm_cgame" );
-	if ( cl_connectedToPureServer )
+	// extra local players need their own instance: a native dll can't be loaded twice
+	if ( cl_connectedToPureServer || cla->playerNum != 0 )
 	{
 		// if sv_pure is set we only allow qvms to be loaded
 		if ( interpret != VMI_COMPILED && interpret != VMI_BYTECODE )
 			interpret = VMI_COMPILED;
 	}
 
-	cgvm = VM_Create( VM_CGAME, CL_CgameSystemCalls, CL_DllSyscall, interpret );
+	cgvm = VM_Create( cla->playerNum ? (vmIndex_t)( VM_CGAME2 + cla->playerNum - 1 ) : VM_CGAME, CL_CgameSystemCalls, CL_DllSyscall, interpret );
 	if ( !cgvm ) {
 		Com_Error( ERR_DROP, "VM_Create on cgame failed" );
 	}
@@ -928,6 +950,10 @@ See if the current console command is claimed by the cgame
 
 qboolean CL_GameCommand( void ) {
 	qboolean bRes;
+
+	if ( cla->playerNum != 0 ) {
+		return CL_SplitGameCommand();	// splitscreen: extra player's cgame, errors isolated
+	}
 
 	if ( !cgvm ) {
 		return qfalse;

@@ -5,3 +5,7 @@ output/
 *.user
 cmake-*
 .idea
+
+# splitscreen fork
+/work/*
+!/work/*-PROVENANCE.md

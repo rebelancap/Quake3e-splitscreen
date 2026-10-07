@@ -216,6 +216,21 @@ unsigned Cvar_Flags( const char *var_name )
 
 /*
 ============
+Cvar_DefaultString
+
+splitscreen: default value of a cvar (for per-player shadows)
+============
+*/
+const char *Cvar_DefaultString( const char *var_name )
+{
+	const cvar_t *var = Cvar_FindVar( var_name );
+
+	return var ? var->resetString : NULL;
+}
+
+
+/*
+============
 Cvar_CommandCompletion
 ============
 */

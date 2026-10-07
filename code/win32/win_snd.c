@@ -26,6 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern cvar_t *s_khz;
 
 static qboolean	dsound_init;
+static qboolean	snd_comInit;	// splitscreen: this module holds one CoInitialize reference
 static qboolean SNDDMA_InitDS( void );
 
 // Visual Studio 2012+ or MINGW
@@ -762,7 +763,10 @@ void SNDDMA_Shutdown( void ) {
 #endif
 	memset( &dma, 0, sizeof( dma ) );
 
-	CoUninitialize();
+	if ( snd_comInit ) {
+		CoUninitialize();
+		snd_comInit = qfalse;
+	}
 }
 
 
@@ -798,8 +802,23 @@ qboolean SNDDMA_Init( void ) {
 #if USE_WASAPI
 	wasapi_init = qfalse;
 #endif
-	if ( CoInitialize( NULL ) != S_OK ) {
-		return qfalse;
+	// splitscreen: SDL's joystick init (in_gamepad.c, before sound) has usually initialised
+	// COM on this thread already: CoInitialize then returns S_FALSE (same apartment; still
+	// needs its CoUninitialize) or RPC_E_CHANGED_MODE (multithreaded apartment: COM is usable
+	// as is, nothing to balance).  Upstream treated anything but S_OK as "no sound".
+	{
+		HRESULT hr = CoInitialize( NULL );
+		if ( hr == S_OK || hr == S_FALSE ) {
+			snd_comInit = qtrue;
+			if ( hr == S_FALSE )
+				Com_Printf( "sound: COM already initialised on this thread (S_FALSE), sharing it\n" );
+		} else if ( hr == RPC_E_CHANGED_MODE ) {
+			snd_comInit = qfalse;
+			Com_Printf( "sound: COM already initialised multithreaded on this thread, using it\n" );
+		} else {
+			Com_Printf( S_COLOR_YELLOW "sound: CoInitialize failed (HRESULT 0x%08lx)\n", (unsigned long)hr );
+			return qfalse;
+		}
 	}
 #if USE_WASAPI
 	if ( Q_stricmp( s_driver->string, "wasapi" ) == 0 && SNDDMA_InitWASAPI() ) {

@@ -94,10 +94,7 @@ cvar_t *cl_stencilbits;
 cvar_t *cl_depthbits;
 cvar_t *cl_drawBuffer;
 
-clientActive_t		cl;
-clientConnection_t	clc;
-clientStatic_t		cls;
-vm_t				*cgvm = NULL;
+clientStatic_t		cls;	// cl, clc, cgvm live in per-player contexts (cl_splitscreen.c)
 
 netadr_t			rcon_address;
 
@@ -129,7 +126,7 @@ typedef struct serverStatus_s
 
 static serverStatus_t cl_serverStatusList[MAX_SERVERSTATUSREQUESTS];
 
-static void CL_CheckForResend( void );
+void CL_CheckForResend( void );
 static void CL_ShowIP_f( void );
 static void CL_ServerStatus_f( void );
 static void CL_ServerStatusResponse( const netadr_t *from, msg_t *msg );
@@ -987,6 +984,7 @@ CL_ShutdownVMs
 static void CL_ShutdownVMs( void )
 {
 	CL_ShutdownCGame();
+	CL_SplitShutdownCGames();	// extra local players' cgames live on the same hunk
 	CL_ShutdownUI();
 }
 
@@ -1086,6 +1084,9 @@ qboolean CL_MapLoading( void ) {
 
 	Con_Close();
 	Key_SetCatcher( 0 );
+
+	// extra local players wait for the new gamestate too
+	CL_SplitMapLoading();
 
 	// if we are already connected to the local host, stay connected
 	if ( cls.state >= CA_CONNECTED && !Q_stricmp( cls.servername, "localhost" ) ) {
@@ -1212,6 +1213,9 @@ qboolean CL_Disconnect( qboolean showMainMenu ) {
 	}
 
 	cl_disconnecting = qtrue;
+
+	// back to player 0 (also after Com_Error longjmp'd out of another context)
+	CL_SplitscreenDisconnect();
 
 	// Stop demo recording
 	if ( clc.demorecording ) {
@@ -1748,7 +1752,7 @@ static void CL_Rcon_f( void ) {
 CL_SendPureChecksums
 =================
 */
-static void CL_SendPureChecksums( void ) {
+void CL_SendPureChecksums( void ) {
 	char cMsg[ MAX_STRING_CHARS-1 ];
 	int len;
 
@@ -2091,6 +2095,151 @@ static void CL_BeginDownload( const char *localName, const char *remoteName ) {
 
 /*
 =================
+CL_UrTDownloads (splitscreen R21)
+
+Urban Terror 4.3's client (FrozenSand ioq3-for-UrbanTerror-4, cl_main.c
+CL_FirstDownload / CL_NextDownload, cl_curl.c) differs from ioq3's:
+  - the switch is cl_autodownload (UrT's menu option, default 1); UrT's default.cfg
+    sets cl_allowdownload 0, which its client never reads,
+  - only the pak named after the server's map is fetched, other missing paks are
+    ignored,
+  - always HTTP from the server's sv_dlURL (a server's sv_allowDownload, 0 on most
+    UrT servers, only concerns UDP),
+  - saved to q3ut4/download/<name>.pk3 under the homepath (a search path there).
+We do the same in q3ut4, with a UDP fallback when the server has no sv_dlURL but
+allows UDP downloads.
+=================
+*/
+static qboolean CL_UrTDownloads( void ) {
+	return FS_UrTGame();
+}
+
+
+static qboolean CL_DownloadsEnabled( void ) {
+	if ( cl_allowDownload->integer & DLF_ENABLE ) {
+		return qtrue;
+	}
+	if ( CL_UrTDownloads() && ( Cvar_VariableIntegerValue( "cl_autodownload" ) & 1 ) ) {
+		return qtrue;
+	}
+	return qfalse;
+}
+
+
+/*
+=================
+CL_DownloadMethod (splitscreen R21)
+
+The way the next pak will be fetched: "http", "udp" or "none", and why.
+=================
+*/
+static const char *CL_DownloadMethod( const char **reason ) {
+	const qboolean urt = CL_UrTDownloads();
+	const qboolean noHttpClient = ( cl_allowDownload->integer & DLF_NO_REDIRECT ) ? qtrue : qfalse;
+	const qboolean noUdpClient = ( cl_allowDownload->integer & DLF_NO_UDP ) ? qtrue : qfalse;
+
+#ifdef USE_CURL
+	if ( !noHttpClient && clc.sv_dlURL[0] && ( urt || !( clc.sv_allowDownload & DLF_NO_REDIRECT ) ) ) {
+		*reason = urt ? "server sv_dlURL, as UrT 4.3's client" : "server sv_dlURL";
+		return "http";
+	}
+#endif
+	if ( urt ) {
+		// a UrT server answers a UDP download only with sv_allowDownload on
+		if ( !noUdpClient && ( clc.sv_allowDownload & DLF_ENABLE ) ) {
+			*reason = clc.sv_dlURL[0] ? "no HTTP on this client, server allows UDP"
+				: "server has no sv_dlURL, allows UDP downloads";
+			return "udp";
+		}
+		*reason = !clc.sv_dlURL[0] ? "server has no sv_dlURL and its sv_allowDownload is off"
+			: noHttpClient ? "HTTP off on this client (cl_allowDownload & 2) and the server's UDP downloads are off"
+			: "no libcurl";
+		return "none";
+	}
+	if ( noUdpClient ) {
+		*reason = "UDP off on this client (cl_allowDownload & 4) and no usable sv_dlURL";
+		return "none";
+	}
+	*reason = !clc.sv_dlURL[0] ? "server has no sv_dlURL" : "HTTP redirect off (cl_allowDownload or sv_allowDownload & 2)";
+	return "udp";
+}
+
+
+/*
+=================
+CL_UrTMapPakOnly (splitscreen R21)
+
+UrT 4.3's CL_FirstDownload: of the missing paks ("@remote@local@remote@local"),
+keep only the one named after the map; the others are listed in *skipped.
+=================
+*/
+static void CL_UrTMapPakOnly( char *list, int size, const char *mapname, char *skipped, int skippedSize ) {
+	char kept[ sizeof( clc.downloadList ) ];
+	char work[ sizeof( clc.downloadList ) ];
+	char *s, *remote, *local, *base;
+	char want[ MAX_QPATH ];
+
+	Com_sprintf( want, sizeof( want ), "%s.pk3", mapname );
+	Q_strncpyz( work, list, sizeof( work ) );
+	kept[0] = '\0';
+	skipped[0] = '\0';
+
+	s = work;
+	while ( *s ) {
+		if ( *s == '@' )
+			s++;
+		remote = s;
+		if ( ( s = strchr( s, '@' ) ) == NULL )
+			break;
+		*s++ = '\0';
+		local = s;
+		if ( ( s = strchr( s, '@' ) ) != NULL )
+			*s++ = '\0';
+		else
+			s = local + strlen( local );
+
+		base = strrchr( remote, '/' );
+		base = base ? base + 1 : remote;
+		if ( mapname[0] && !Q_stricmp( base, want ) && !kept[0] ) {
+			Com_sprintf( kept, sizeof( kept ), "@%s@%s", remote, local );
+		} else {
+			Q_strcat( skipped, skippedSize, va( "%s%s", skipped[0] ? " " : "", remote ) );
+		}
+	}
+	Q_strncpyz( list, kept, size );
+}
+
+
+/*
+=================
+CL_DownloadNames (splitscreen R21): the remote names of a "@remote@local..." list
+=================
+*/
+static const char *CL_DownloadNames( const char *list ) {
+	static char out[ MAX_STRING_CHARS ];
+	const char *s = list;
+	int field = 0;
+	int n = 0;
+
+	out[0] = '\0';
+	while ( *s && n < (int)sizeof( out ) - 2 ) {
+		if ( *s == '@' ) {
+			field++;
+			if ( ( field & 1 ) && n > 0 ) {
+				out[n++] = ' ';
+			}
+		} else if ( field & 1 ) {
+			out[n++] = *s;
+		}
+		s++;
+	}
+	out[n] = '\0';
+	return out[0] ? out : "none";
+}
+
+
+/*
+=================
 CL_NextDownload
 
 A download completed or failed
@@ -2136,6 +2285,33 @@ void CL_NextDownload( void )
 			*s++ = '\0';
 		else
 			s = localName + strlen(localName); // point at the null byte
+
+		if ( CL_UrTDownloads() ) {
+			// splitscreen R21: UrT 4.3's rules (CL_UrTDownloads)
+			static char urtLocal[ MAX_OSPATH ]; // "q3ut4/download/" + a MAX_QPATH pak name
+			const char *reason;
+			const char *method = CL_DownloadMethod( &reason );
+
+			Com_sprintf( urtLocal, sizeof( urtLocal ), "q3ut4/download/%s", COM_SkipPath( localName ) );
+			Com_Printf( "download: %s -> %s via %s (%s)\n", remoteName, urtLocal, method, reason );
+#ifdef USE_CURL
+			if ( !strcmp( method, "http" ) && CL_cURL_Init() ) {
+				Com_Printf( "download: URL %s/%s\n", clc.sv_dlURL, remoteName );
+				CL_cURL_BeginDownload( urtLocal, va( "%s/%s", clc.sv_dlURL, remoteName ) );
+				useCURL = qtrue;
+			} else
+#endif
+			if ( !strcmp( method, "udp" ) ) {
+				CL_BeginDownload( urtLocal, remoteName );
+			} else {
+				Com_Error( ERR_DROP, "Can not download %s: %s.\nGet the map from an Urban Terror map site and put it in q3ut4/download/.",
+					remoteName, reason );
+				return;
+			}
+			clc.downloadRestart = qtrue;
+			memmove( clc.downloadList, s, strlen( s ) + 1 );
+			return;
+		}
 
 #ifdef USE_CURL
 		if(!(cl_allowDownload->integer & DLF_NO_REDIRECT)) {
@@ -2201,10 +2377,17 @@ and determine if we need to download them
 =================
 */
 void CL_InitDownloads( void ) {
+	// splitscreen R21: every decision is logged (download: server ...; missing: ...; method: ...)
+	const char *info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
+	const char *reason;
 
-	if ( !(cl_allowDownload->integer & DLF_ENABLE) )
+	if ( !CL_DownloadsEnabled() )
 	{
 		char missingfiles[ MAXPRINTMSG ];
+
+		Com_Printf( "download: server sv_allowDownload=%i sv_dlURL=%s; downloads off on this client (cl_allowDownload %i%s)\n",
+			clc.sv_allowDownload, clc.sv_dlURL[0] ? clc.sv_dlURL : "(none)", cl_allowDownload->integer,
+			CL_UrTDownloads() ? va( ", cl_autodownload %i", Cvar_VariableIntegerValue( "cl_autodownload" ) ) : "" );
 
 		// autodownload is disabled on the client
 		// but it's possible that some referenced files on the server are missing
@@ -2218,8 +2401,28 @@ void CL_InitDownloads( void ) {
 		}
 	}
 	else if ( FS_ComparePaks( clc.downloadList, sizeof( clc.downloadList ) , qtrue ) ) {
+		const char *method;
 
 		Com_Printf( "Need paks: %s\n", clc.downloadList );
+
+		if ( CL_UrTDownloads() ) {
+			char skipped[ MAX_STRING_CHARS ];
+
+			CL_UrTMapPakOnly( clc.downloadList, sizeof( clc.downloadList ), Info_ValueForKey( info, "mapname" ),
+				skipped, sizeof( skipped ) );
+			if ( skipped[0] ) {
+				Com_Printf( "download: not fetched (UrT fetches only the map's pak): %s\n", skipped );
+			}
+		}
+		if ( *clc.downloadList ) {
+			method = CL_DownloadMethod( &reason );
+		} else {
+			method = "none";
+			reason = "nothing to fetch";
+		}
+		Com_Printf( "download: server sv_allowDownload=%i sv_dlURL=%s; missing: %s; method: %s (%s)\n",
+			clc.sv_allowDownload, clc.sv_dlURL[0] ? clc.sv_dlURL : "(none)",
+			CL_DownloadNames( clc.downloadList ), method, reason );
 
 		if ( *clc.downloadList ) {
 			// if autodownloading is not enabled on the server
@@ -2234,10 +2437,15 @@ void CL_InitDownloads( void ) {
 
 	}
 
+	else {
+		Com_Printf( "download: server sv_allowDownload=%i sv_dlURL=%s; missing: none\n",
+			clc.sv_allowDownload, clc.sv_dlURL[0] ? clc.sv_dlURL : "(none)" );
+	}
+
 #ifdef USE_CURL
 	if ( cl_mapAutoDownload->integer && ( !(clc.sv_allowDownload & DLF_ENABLE) || clc.demoplaying ) )
 	{
-		const char *info, *mapname, *bsp;
+		const char *mapname, *bsp;
 
 		// get map name and BSP file name
 		info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
@@ -2266,7 +2474,7 @@ CL_CheckForResend
 Resend a connect message if the last one has timed out
 =================
 */
-static void CL_CheckForResend( void ) {
+void CL_CheckForResend( void ) {
 	int		port, len;
 	char	info[MAX_INFO_STRING*2]; // larger buffer to detect overflows
 	char	data[MAX_INFO_STRING];
@@ -2298,15 +2506,15 @@ static void CL_CheckForResend( void ) {
 			CL_RequestAuthorization();
 #endif
 		// The challenge request shall be followed by a client challenge so no malicious server can hijack this connection.
-		NET_OutOfBandPrint( NS_CLIENT, &clc.serverAddress, "getchallenge %d %s", clc.challenge, GAMENAME_FOR_MASTER );
+		NET_OutOfBandPrint( cla->sock, &clc.serverAddress, "getchallenge %d %s", clc.challenge, GAMENAME_FOR_MASTER );
 		break;
 
 	case CA_CHALLENGING:
 		// sending back the challenge
-		port = Cvar_VariableIntegerValue( "net_qport" );
+		port = CL_ContextQport();
 
 		infoTruncated = qfalse;
-		Q_strncpyz( info, Cvar_InfoString( CVAR_USERINFO, &infoTruncated ), sizeof( info ) );
+		Q_strncpyz( info, CL_SplitUserinfo( &infoTruncated ), sizeof( info ) );	// splitscreen: per-player
 
 		// remove some non-important keys that may cause overflow during connection
 		if ( strlen( info ) > MAX_USERINFO_LENGTH - 64 ) {
@@ -2337,7 +2545,16 @@ static void CL_CheckForResend( void ) {
 
 		// for now - this will be used to inform server about q3msgboom fix
 		// this is optional key so will not trigger oversize warning
-		Info_SetValueForKey_s( info, MAX_USERINFO_LENGTH, "client", Q3_VERSION );
+		// splitscreen R18: not in Urban Terror.  UrT 4.3's own client (ioq3-for-
+		// UrbanTerror-4 CL_CheckForResend) sends no "client" key, and UrT servers'
+		// B3/B4 admin bot (vpncheck plugin, whitelist_clients) tempbans any
+		// "client" value not on its list: "Non whitelist client Q3 1.32e ..."
+		if ( FS_UrTGame() ) {
+			Com_Printf( "urt: connect userinfo to %s: no \"client\" key (as UrT 4.3's client), version \"%s\"\n",
+				NET_AdrToString( &clc.serverAddress ), com_version->string );
+		} else {
+			Info_SetValueForKey_s( info, MAX_USERINFO_LENGTH, "client", Q3_VERSION );
+		}
 
 		if ( !notOverflowed ) {
 			Com_Printf( S_COLOR_YELLOW "WARNING: oversize userinfo, you might be not able to join remote server!\n" );
@@ -2345,7 +2562,7 @@ static void CL_CheckForResend( void ) {
 
 		len = Com_sprintf( data, sizeof( data ), "connect \"%s\"", info );
 		// NOTE TTimo don't forget to set the right data length!
-		NET_OutOfBandCompress( NS_CLIENT, &clc.serverAddress, (byte *) &data[0], len );
+		NET_OutOfBandCompress( cla->sock, &clc.serverAddress, (byte *) &data[0], len );
 		// the most current userinfo has been sent, so watch for any
 		// newer changes to userinfo variables
 		cvar_modifiedFlags &= ~CVAR_USERINFO;
@@ -2753,7 +2970,7 @@ static qboolean CL_ConnectionlessPacket( const netadr_t *from, msg_t *msg ) {
 			}
 		}
 
-		Netchan_Setup( NS_CLIENT, &clc.netchan, from, Cvar_VariableIntegerValue( "net_qport" ), clc.challenge, clc.compat );
+		Netchan_Setup( cla->sock, &clc.netchan, from, CL_ContextQport(), clc.challenge, clc.compat );
 
 		cls.state = CA_CONNECTED;
 		clc.lastPacketSentTime = cls.realtime - RETRANSMIT_TIMEOUT; // send first packet immediately
@@ -2800,6 +3017,9 @@ static qboolean CL_ConnectionlessPacket( const netadr_t *from, msg_t *msg ) {
 			s = MSG_ReadString( msg );
 			Q_strncpyz( clc.serverMessage, s, sizeof( clc.serverMessage ) );
 			Com_Printf( "%s", s );
+			if ( fromserver && cla->playerNum ) {
+				CL_SplitServerPrint( clc.serverMessage );	// splitscreen: an extra player's connect refused?
+			}
 		}
 		return fromserver;
 	}
@@ -2972,6 +3192,12 @@ static void CL_CheckUserinfo( void ) {
 			Com_Printf( S_COLOR_YELLOW "WARNING: oversize userinfo, you might be not able to play on remote server!\n" );
 		}
 
+		info = CL_SplitSrvUserinfo( 0, CL_AimAssistUserinfo( 0, info ) );	// + Server options player health	// splitscreen: aim assist name marker (local games)
+
+		if ( CL_SplitSkipUserinfo( info ) ) {
+			return;	// splitscreen: unchanged (a cgame restarting in place re-registered its cvars)
+		}
+
 		CL_AddReliableCommand( va( "userinfo \"%s\"", info ), qfalse );
 	}
 }
@@ -3107,6 +3333,9 @@ void CL_Frame( int msec, int realMsec ) {
 
 	// resend a connection request if necessary
 	CL_CheckForResend();
+
+	// extra local players' connection upkeep
+	CL_SplitscreenFrame();
 
 	// decide on the serverTime to render
 	CL_SetCGameTime();
@@ -3743,6 +3972,12 @@ qboolean CL_GetModeInfo( int *width, int *height, float *windowAspect, int mode,
 	const	vidmode_t *vm;
 	float	pixelAspect;
 
+	// splitscreen Independent mode: the window's tile (cl_splitindep.c)
+	if ( CL_SplitWindowRect( NULL, NULL, width, height ) ) {
+		*windowAspect = (float)*width / *height;
+		return qtrue;
+	}
+
 	// set dedicated fullscreen mode
 	if ( fullscreen && *modeFS )
 		mode = atoi( modeFS );
@@ -3901,6 +4136,7 @@ void CL_Init( void ) {
 	cls.realtime = 0;
 
 	CL_InitInput();
+	CL_InitSplitscreen();
 
 	//
 	// register client variables
@@ -3954,6 +4190,22 @@ void CL_Init( void ) {
 
 	cl_allowDownload = Cvar_Get( "cl_allowDownload", "1", CVAR_ARCHIVE_ND );
 	Cvar_SetDescription( cl_allowDownload, "Enables downloading of content needed in server. Valid bitmask flags:\n 1: Downloading enabled\n 2: Do not use HTTP/FTP downloads\n 4: Do not use UDP downloads" );
+	// splitscreen R20: say once at start whether a missing map can be downloaded and how
+	// (R21: in Urban Terror the switch is UrT's own cl_autodownload, see CL_UrTDownloads)
+	if ( FS_UrTGame() ) {
+		Cvar_SetDescription( Cvar_Get( "cl_autodownload", "1", CVAR_ARCHIVE_ND ),
+			"Urban Terror: 1 - download a missing map from the server (sv_dlURL, else UDP if the server allows it), 0 - off." );
+		Com_Printf( "download: Urban Terror: map downloads %s (cl_autodownload %i; cl_allowDownload %i is not the switch in UrT)\n",
+			( Cvar_VariableIntegerValue( "cl_autodownload" ) & 1 ) || ( cl_allowDownload->integer & DLF_ENABLE ) ? "on" : "off",
+			Cvar_VariableIntegerValue( "cl_autodownload" ), cl_allowDownload->integer );
+	}
+#if defined( USE_CURL ) && !defined( USE_CURL_DLOPEN )
+	Com_Printf( "download: cl_allowDownload %i; HTTP/FTP (server sv_dlURL, dlmap) via %s (built in)\n", cl_allowDownload->integer, curl_version() );
+#elif defined( USE_CURL )
+	Com_Printf( "download: cl_allowDownload %i; HTTP/FTP via libcurl loaded at run time (cl_cURLLib)\n", cl_allowDownload->integer );
+#else
+	Com_Printf( "download: cl_allowDownload %i; UDP only (built without libcurl)\n", cl_allowDownload->integer );
+#endif
 #ifdef USE_CURL
 	cl_mapAutoDownload = Cvar_Get( "cl_mapAutoDownload", "0", CVAR_ARCHIVE_ND );
 	Cvar_SetDescription( cl_mapAutoDownload, "Automatic map download for play and demo playback (via automatic \\dlmap call)." );
@@ -4106,6 +4358,8 @@ void CL_Shutdown( const char *finalmsg, qboolean quit ) {
 		return;
 	}
 	recursive = qtrue;
+
+	CL_ShutdownSplitscreen();
 
 	noGameRestart = quit;
 	CL_Disconnect( qfalse );

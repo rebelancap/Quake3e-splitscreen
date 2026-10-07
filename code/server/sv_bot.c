@@ -258,7 +258,7 @@ BotImport_BSPEntityData
 ==================
 */
 static char *BotImport_BSPEntityData(void) {
-	return CM_EntityString();
+	return SV_SplitBSPEntities();	// the entities the game got (sv_splitrules.c)
 }
 
 /*

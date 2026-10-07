@@ -1,85 +1,100 @@
-# Quake3e
+# Quake3e-splitscreen
 
-[![build](../../workflows/build/badge.svg)](../../actions?query=workflow%3Abuild) * <a href="https://discord.com/invite/X3Exs4C"><img src="https://img.shields.io/discord/314456230649135105?color=7289da&logo=discord&logoColor=white" alt="Discord server" /></a>
+Local splitscreen and gamepad support for Quake III Arena, built on
+[Quake3e](https://github.com/ec-/Quake3e). Two to eight players on one
+screen, each with their own gamepad, in unmodified Quake III, Team Arena,
+Urban Terror and other Quake III mods, on local matches or online servers.
+100% vibe coded with lots of passion and attention to detail.
 
-This is a modern Quake III Arena engine aimed to be fast, secure and compatible with all existing Q3A mods.
-It is based on last non-SDL source dump of [ioquake3](https://github.com/ioquake/ioq3) with latest upstream fixes applied.
+![Four players on one screen](docs/images/splitscreen-2x2.jpg)
 
-Go to [Releases](../../releases) section to download latest binaries for your platform or follow [Build Instructions](#build-instructions)
+## What it does
 
-*This repository does not contain any game content so in order to play you must copy the resulting binaries into your existing Quake III Arena installation*
+- **Up to 8 players** on one screen. Layouts follow the player count
+  (side by side, 2x2, 2x3, 2x4); each viewport gets its own HUD.
+- **Gamepads just work.** Plug in pads, start a game, and friends hold **A**
+  to join. Player 1 can use keyboard and mouse or a pad.
+- **Profiles.** Each player picks a name, model, aim feel, aim assist (local games only, off by default),
+  controls, FOV and deadzones; profiles are saved and reused.
+- **Pause menu on every pad** with the game's own options plus server
+  settings for the host: map, game type, limits, bots, instagib, weapons,
+  power-ups, gravity, friendly fire, god mode and more.
+- **Works with unmodified mods and servers.** Every local player is a
+  full client to the game, so mods and online servers see ordinary players.
+- **Urban Terror 4.3** has its own pad layout and menu style. See
+  [docs/URBAN-TERROR.md](docs/URBAN-TERROR.md).
+- **Independent mode (experimental):** one window per player instead of one
+  shared screen, for multi-monitor setups.
 
-**Key features**:
+## Install
 
-* optimized OpenGL renderer
-* optimized Vulkan renderer
-* raw mouse input support, enabled automatically instead of DirectInput(**\in_mouse 1**) if available
-* **\in_minimize** - hotkey for minimize/restore main window (win32-only, direct replacement for Q3Minimizer)
-* **\video-pipe** - to use external ffmpeg binary as an encoder for better quality and smaller output files
-* significally reworked QVM (Quake Virtual Machine)
-* improved server-side DoS protection, much reduced memory usage
-* raised filesystem limits (up to 20,000 maps can be handled in a single directory)
-* reworked Zone memory allocator, no more out-of-memory errors
-* non-intrusive support for SDL2 backend (video, audio, input), selectable at compile time
-* tons of bug fixes and other improvements
+No game data is included. You need a copy of Quake III Arena (the
+`baseq3` folder with its `pak0.pk3` to `pak8.pk3`) or Urban Terror 4.3.
 
-## Vulkan renderer
+1. Download the release for your platform from the Releases page.
+2. Copy the executables next to your `baseq3` folder (or your `q3ut4`
+   folder for Urban Terror).
+3. Start `quake3e-vulkan-ss` (Vulkan) or `quake3e-ss` (OpenGL).
 
-Based on [Quake-III-Arena-Kenny-Edition](https://github.com/kennyalive/Quake-III-Arena-Kenny-Edition) with many additions:
+The executables are self-contained. Your existing settings and `q3config.cfg`
+are left alone; this engine keeps its own settings in `q3config-ss.cfg`
+beside them, so it can live next to the original Quake3e.
 
-* high-quality per-pixel dynamic lighting
-* very fast flares (**\r_flares 1**)
-* anisotropic filtering (**\r_ext_texture_filter_anisotropic**)
-* greatly reduced API overhead (call/dispatch ratio)
-* flexible vertex buffer memory management to allow loading huge maps
-* multiple command buffers to reduce processing bottlenecks
-* [reversed depth buffer](https://developer.nvidia.com/content/depth-precision-visualized) to eliminate z-fighting on big maps
-* merged lightmaps (atlases)
-* multitexturing optimizations
-* static world surfaces cached in VBO (**\r_vbo 1**)
-* useful debug markers for tools like [RenderDoc](https://renderdoc.org/)
-* fixed framebuffer corruption on some Intel iGPUs
-* offscreen rendering, enabled with **\r_fbo 1**, all following requires it enabled:
-* `screenMap` texture rendering - to create realistic environment reflections
-* multisample anti-aliasing (**\r_ext_multisample**)
-* supersample anti-aliasing (**\r_ext_supersample**)
-* per-window gamma-correction which is important for screen-capture tools like OBS
-* you can minimize game window any time during **\video**|**\video-pipe** recording
-* high dynamic range render targets (**\r_hdr 1**) to avoid color banding
-* bloom post-processing effect
-* arbitrary resolution rendering
-* greyscale mode
+| Platform | Files |
+|---|---|
+| Windows x64 | `quake3e-vulkan-ss.x64.exe`, `quake3e-ss.x64.exe`, `quake3e-ss.ded.x64.exe` |
+| Linux x64 / Steam Deck | `quake3e-vulkan-ss.x64`, `quake3e-ss.x64`, `quake3e-ss.ded.x64` |
 
-In general, not counting offscreen rendering features you might expect from 10% to 200%+ FPS increase comparing to KE's original version
+## Playing
 
-Highly recommended to use on modern systems
+1. Start a game as usual (Skirmish, Multiplayer, or a server).
+2. Each extra player holds **A** on their pad to join and picks or creates a
+   profile.
+3. **Start** on any pad opens that player's menu: resume, leave, profile,
+   controls, and for the host the server options.
 
-## OpenGL renderer
+Keyboard players use the normal Quake III menus and binds.
 
-Based on classic OpenGL renderers from [idq3](https://github.com/id-Software/Quake-III-Arena)/[ioquake3](https://github.com/ioquake/ioq3)/[cnq3](https://bitbucket.org/CPMADevs/cnq3)/[openarena](https://github.com/OpenArena/engine), features:
+## Launch options
 
-* OpenGL 1.1 compatible, uses features from newer versions whenever available
-* high-quality per-pixel dynamic lighting, can be triggered by **\r_dlightMode** cvar
-* merged lightmaps (atlases)
-* static world surfaces cached in VBO (**\r_vbo 1**)
-* all set of offscreen rendering features mentioned in Vulkan renderer, plus:
-* bloom reflection post-processing effect
+Useful for shortcuts and launchers such as Playnite or Steam. `--independent`
+goes before the first `+set`; everything else is a normal Quake III `+set`
+or `+command` argument.
 
-Performance is usually greater or equal to other opengl1 renderers
+| Purpose | Example |
+|---|---|
+| Quake III, exe beside `baseq3` | `quake3e-vulkan-ss.x64.exe` |
+| Game data elsewhere | `quake3e-vulkan-ss.x64.exe +set fs_basepath "D:\Games\Quake3"` |
+| Urban Terror, exe beside `q3ut4` | `quake3e-vulkan-ss.x64.exe` (detected automatically) |
+| Urban Terror from anywhere | `quake3e-vulkan-ss.x64.exe +set fs_basepath "D:\Games\UrbanTerror43" +set fs_basegame q3ut4` |
+| A mod (OSP, CPMA, Team Arena) | `quake3e-vulkan-ss.x64.exe +set fs_game osp` |
+| Independent mode (one window per player) | `quake3e-vulkan-ss.x64.exe --independent` |
+| Windowed | `quake3e-vulkan-ss.x64.exe +set r_fullscreen 0 +set r_mode -1 +set r_customwidth 1920 +set r_customheight 1080` |
+| Straight into a map or a server | `... +map q3dm7` or `... +connect 203.0.113.5:27960` |
+| Keep settings in a separate folder | `... +set fs_homepath "D:\Q3-splitscreen"` |
+| Player 1 on keyboard and mouse (default: the first pad to press a button) | `... +set cl_splitP1Input kbm` |
 
-## OpenGL2 renderer
+Linux: the same arguments with `./quake3e-vulkan-ss.x64`. Settings are saved
+in `q3config-ss.cfg` in the game folder (or the home path), so these can also
+be set once in the console with `seta` and left out of the shortcut.
 
-Original ioquake3 renderer, performance is very poor on non-nvidia systems, unmaintained
+## Building
 
-## [Build Instructions](BUILD.md)
+Windows: Visual Studio 2019 or later, then `scripts\build.ps1` (output in
+`build\Release`). Linux: `scripts/build.sh` (needs gcc, make, SDL2, Vulkan and
+OpenGL headers; output in `build/release-linux-x86_64`). Releases are built by
+GitHub Actions from a version tag. Details in [BUILD.md](BUILD.md).
 
-## Contacts
+## Known limits
 
-Discord channel: https://discordapp.com/invite/X3Exs4C
+- Urban Terror account login (`auth`) is not supported; servers that require
+  it will not let you in.
+- Independent mode is experimental. Tools that remap pads when no fullscreen
+  game is detected (for example Joyxoff) do not recognise its windows;
+  disable their bindings while playing.
 
-## Links
+## Credits
 
-* https://bitbucket.org/CPMADevs/cnq3
-* https://github.com/ioquake/ioq3
-* https://github.com/kennyalive/Quake-III-Arena-Kenny-Edition
-* https://github.com/OpenArena/engine
+Quake3e by ec- and contributors, ioquake3, and id Software for Quake III
+Arena. Quake3e-splitscreen keeps Quake3e's GPL-2.0 licence; see
+[docs/README.upstream.md](docs/README.upstream.md) for the upstream notes.

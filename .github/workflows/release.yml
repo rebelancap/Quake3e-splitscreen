@@ -1,0 +1,165 @@
+# Quake3e-splitscreen release builds (replaces upstream's build.yml, which
+# builds upstream's whole matrix and publishes a rolling "latest" release).
+#
+# Push a tag v<VERSION> (e.g. v1.0.0; must equal the first line of VERSION)
+# -> Linux x86_64 tar.gz + Windows x64 zip attached to that tag's GitHub
+# release (created if missing).  workflow_dispatch builds both archives as
+# workflow artifacts only (named after VERSION, no release).
+#
+# Archives hold only the executables, like upstream's (unpack next to baseq3/):
+#   linux:   quake3e-vulkan-ss.x64  quake3e-ss.x64  quake3e-ss.ded.x64
+#   windows: quake3e-vulkan-ss.x64.exe  quake3e-ss.x64.exe  quake3e-ss.ded.x64.exe (SDL2 linked in)
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version check
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Tag must equal VERSION
+      id: ver
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        VERSION="$(head -n1 VERSION | tr -d '[:space:]')"
+        case "$VERSION" in
+          [0-9]*.[0-9]*.[0-9]*) ;;
+          *) echo "::error::bad VERSION '$VERSION'"; exit 1 ;;
+        esac
+        if [ "$EVENT" = "push" ]; then
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $VERSION"
+            exit 1
+          fi
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Quake3e-splitscreen $VERSION"
+
+  linux-x86_64:
+    name: Linux x86_64
+    needs: version
+    runs-on: ubuntu-24.04
+    # Built inside an Ubuntu 22.04 container (glibc 2.35) rather than on the
+    # 24.04 runner (glibc 2.39): the executables link against the glibc they
+    # were built with, and Steam Deck / older distributions ship older ones.
+    container: ubuntu:22.04
+    steps:
+    - name: Install tools
+      run: |
+        apt-get -qq update
+        DEBIAN_FRONTEND=noninteractive apt-get -y install git build-essential make pkg-config libcurl4-openssl-dev mesa-common-dev libxxf86dga-dev libxrandr-dev libxxf86vm-dev libasound-dev libsdl2-dev
+        git config --global --add safe.directory '*'
+
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+
+    # scripts/build.sh is the same script used on the dev box: without
+    # distrobox it runs make directly (USE_SDL=1 USE_RENDERER_DLOPEN=0, a
+    # Vulkan client CNAME=quake3e-vulkan-ss, an OpenGL client CNAME=quake3e-ss
+    # + server DNAME=quake3e-ss.ded, SPLITSCREEN_VERSION from VERSION), then
+    # installs the three executables stripped into build/release-linux-x86_64/.
+    - name: Build
+      run: scripts/build.sh
+
+    - name: Package
+      env:
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        grep -q "^version: $VERSION\$" build/release-linux-x86_64/BUILD-INFO.txt
+        cat build/release-linux-x86_64/BUILD-INFO.txt
+        mkdir bin
+        for f in quake3e-vulkan-ss.x64 quake3e-ss.x64 quake3e-ss.ded.x64; do
+          install -m 0755 "build/release-linux-x86_64/$f" "bin/$f"
+        done
+        tar --owner=0 --group=0 -czf "quake3e-splitscreen-$VERSION-linux-x86_64.tar.gz" -C bin quake3e-vulkan-ss.x64 quake3e-ss.x64 quake3e-ss.ded.x64
+        tar tzvf "quake3e-splitscreen-$VERSION-linux-x86_64.tar.gz"
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: linux-x86_64
+        path: quake3e-splitscreen-${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
+        if-no-files-found: error
+        retention-days: 30
+
+  # Runs scripts\build.ps1, the same script as the Windows dev box (VS2019
+  # v142 there; here the runner's VS2022 MSBuild with -PlatformToolset v143):
+  # downloads the SDL2 2.32.10 source release (sha256-pinned in build.ps1),
+  # builds it as a static library linked into both clients (no SDL2.dll),
+  # then the Vulkan + OpenGL clients and the dedicated server under their
+  # release names in build\Release\.  UNVERIFIED on GitHub's runner until
+  # the first CI run (the same script builds locally with VS2019).
+  windows-x64:
+    name: Windows x64 (MSVC)
+    needs: version
+    runs-on: windows-2022
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+
+    - name: Build
+      shell: pwsh
+      run: ./scripts/build.ps1 -Configuration Release -PlatformToolset v143
+
+    - name: Package
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $info = Get-Content build\Release\BUILD-INFO.txt
+        $info
+        if (-not ($info -contains "version: $env:VERSION")) { throw "BUILD-INFO.txt is not version $env:VERSION" }
+        $zip   = "quake3e-splitscreen-$env:VERSION-windows-x86_64.zip"
+        $names = 'quake3e-vulkan-ss.x64.exe', 'quake3e-ss.x64.exe', 'quake3e-ss.ded.x64.exe'
+        foreach ($n in $names) { if (-not (Test-Path "build\Release\$n")) { throw "missing build\Release\$n" } }
+        Compress-Archive -Path ($names | ForEach-Object { "build\Release\$_" }) -DestinationPath $zip
+        Get-ChildItem build\Release\*.exe, $zip
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: windows-x86_64
+        path: quake3e-splitscreen-${{ needs.version.outputs.version }}-windows-x86_64.zip
+        if-no-files-found: error
+        retention-days: 30
+
+  release:
+    name: GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux-x86_64, windows-x64]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        path: dist
+        merge-multiple: true
+
+    - name: List
+      run: ls -l dist
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Quake3e-splitscreen ${{ needs.version.outputs.version }}
+        files: |
+          dist/quake3e-splitscreen-${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
+          dist/quake3e-splitscreen-${{ needs.version.outputs.version }}-windows-x86_64.zip
+        fail_on_unmatched_files: true

@@ -49,4 +49,7 @@ char *strlwr (char *s);
 // signals.c
 void InitSig(void);
 
+// unix_splitproc.c (splitscreen Independent mode): --independent / --child / --noactivate
+void Sys_SplitParseFlags( const char *cmdline );
+
 #endif // __LINUX_LOCAL_H__

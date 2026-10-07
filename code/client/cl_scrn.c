@@ -524,7 +524,8 @@ static void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 
 	re.BeginFrame( stereoFrame );
 
-	uiFullscreen = (uivm && VM_Call( uivm, 0, UI_IS_FULLSCREEN ));
+	// splitscreen: player 1 menu covers only its own cell while others play
+	uiFullscreen = (uivm && !CL_SplitUIInCell() && VM_Call( uivm, 0, UI_IS_FULLSCREEN ));
 
 	// wide aspect ratio screens need to have the sides cleared
 	// unless they are displaying game renderings
@@ -566,7 +567,7 @@ static void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 		case CA_PRIMED:
 			// draw the game information screen and loading progress
 			if ( cgvm ) {
-				CL_CGameRendering( stereoFrame );
+				CL_SplitCGameRendering( stereoFrame );
 			}
 			// also draw the connection information, so it doesn't
 			// flash away too briefly on local or lan games
@@ -576,7 +577,7 @@ static void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 			break;
 		case CA_ACTIVE:
 			// always supply STEREO_CENTER as vieworg offset is now done by the engine.
-			CL_CGameRendering( stereoFrame );
+			CL_SplitCGameRendering( stereoFrame );	// every local player's view
 			SCR_DrawDemoRecording();
 #ifdef USE_VOIP
 			SCR_DrawVoipMeter();
@@ -589,6 +590,9 @@ static void SCR_DrawScreenField( stereoFrame_t stereoFrame ) {
 	if ( Key_GetCatcher( ) & KEYCATCH_UI && uivm ) {
 		VM_Call( uivm, 1, UI_REFRESH, cls.realtime );
 	}
+
+	// splitscreen: per-player engine overlays (pause, controls, settings)
+	CL_SplitMenuDraw();
 
 	// console draws next
 	Con_DrawConsole ();
@@ -615,6 +619,8 @@ void SCR_UpdateScreen( void ) {
 
 	if ( !scr_initialized )
 		return; // not initialized yet
+
+	CL_IndepLoadBeat();	// splitscreen Independent mode: a player window beats through long loads
 
 	if ( framecount == cls.framecount ) {
 		int ms = Sys_Milliseconds();

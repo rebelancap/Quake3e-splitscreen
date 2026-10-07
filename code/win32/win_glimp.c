@@ -627,6 +627,13 @@ static qboolean GLW_CreateWindow( int width, int height, int colorbits, qboolean
 	int				exstyle;
 	qboolean		oldFullscreen;
 	qboolean		res = qfalse;
+	int				xpos = vid_xpos->integer, ypos = vid_ypos->integer;
+	qboolean		noborder = r_noborder->integer ? qtrue : qfalse;
+
+	// splitscreen Independent mode: a borderless window at its tile
+	if ( CL_SplitWindowRect( &xpos, &ypos, NULL, NULL ) ) {
+		noborder = qtrue;
+	}
 
 	//
 	// register the window class if necessary
@@ -657,8 +664,8 @@ static qboolean GLW_CreateWindow( int width, int height, int colorbits, qboolean
 		// Com_Printf( "...registered window class\n" );
 	}
 
-	r.left = vid_xpos->integer;
-	r.top = vid_ypos->integer;
+	r.left = xpos;
+	r.top = ypos;
 	r.right = r.left + width;
 	r.bottom = r.top + height;
 
@@ -687,9 +694,9 @@ static qboolean GLW_CreateWindow( int width, int height, int colorbits, qboolean
 		else
 		{
 			exstyle = WINDOW_ESTYLE_NORMAL;
-			if ( r_noborder->integer ) {
+			if ( noborder ) {
 				stylebits = WINDOW_STYLE_NORMAL_NB;
-				g_wv.borderless = r_noborder->integer;
+				g_wv.borderless = 1;
 			} else {
 				stylebits = WINDOW_STYLE_NORMAL;
 			}
@@ -700,8 +707,8 @@ static qboolean GLW_CreateWindow( int width, int height, int colorbits, qboolean
 		h = r.bottom - r.top;
 
 		// select monitor from window rect
-		r.left = vid_xpos->integer;
-		r.top = vid_ypos->integer;
+		r.left = xpos;
+		r.top = ypos;
 		r.right = r.left + w;
 		r.bottom = r.top + h;
 		UpdateMonitorInfo( &r );
@@ -713,8 +720,8 @@ static qboolean GLW_CreateWindow( int width, int height, int colorbits, qboolean
 		}
 		else
 		{
-			x = vid_xpos->integer;
-			y = vid_ypos->integer;
+			x = xpos;
+			y = ypos;
 
 			// adjust window coordinates if necessary 
 			// so that the window is completely on screen
@@ -1249,7 +1256,7 @@ static qboolean GLW_LoadOpenGL( const char *drivername )
 	// 
 	if ( QGL_Init( buffer ) )
 	{
-		cdsFullscreen = (r_fullscreen->integer != 0);
+		cdsFullscreen = (r_fullscreen->integer != 0) && !CL_SplitWindowRect( NULL, NULL, NULL, NULL );	// splitscreen Independent mode: borderless tiles
 
 		// create the window and set up the context
 		if ( GLW_StartDriverAndSetMode( r_mode->integer, r_modeFullscreen->string, r_colorbits->integer, cdsFullscreen, qfalse ) != RSERR_OK )
@@ -1379,7 +1386,7 @@ void GLimp_Init( glconfig_t *config )
 	}
 
 	// show main window after all initializations
-	ShowWindow( g_wv.hWnd, SW_SHOW );
+	GLW_SplitShowWindow();	// (splitscreen: no activation for spawned / --noactivate windows)
 
 	IN_Init();
 
@@ -1440,6 +1447,7 @@ void GLimp_Shutdown( qboolean unloadDLL )
 	if ( g_wv.hWnd )
 	{
 		Com_Printf( "...destroying window\n" );
+		GLW_SplitUnmarkShell( g_wv.hWnd );	// splitscreen Independent mode (R16)
 		//ShowWindow( g_wv.hWnd, SW_HIDE );
 		DestroyWindow( g_wv.hWnd );
 		g_wv.hWnd = NULL;
@@ -1467,7 +1475,7 @@ static qboolean GLW_LoadVulkan( void )
 	//
 	if ( QVK_Init() )
 	{
-		qboolean cdsFullscreen = (r_fullscreen->integer != 0);
+		qboolean cdsFullscreen = (r_fullscreen->integer != 0) && !CL_SplitWindowRect( NULL, NULL, NULL, NULL );	// splitscreen Independent mode: borderless tiles
 
 		// create the window and set up the context
 		if ( GLW_StartDriverAndSetMode( r_mode->integer, r_modeFullscreen->string, r_colorbits->integer, cdsFullscreen, qtrue ) == RSERR_OK )
@@ -1519,7 +1527,7 @@ void VKimp_Init( glconfig_t *config )
 	config->hardwareType = GLHW_GENERIC;
 
 	// show main window after all initializations
-	ShowWindow( g_wv.hWnd, SW_SHOW );
+	GLW_SplitShowWindow();	// (splitscreen: no activation for spawned / --noactivate windows)
 
 	IN_Init();
 
@@ -1548,6 +1556,7 @@ void VKimp_Shutdown( qboolean unloadDLL )
 	if ( g_wv.hWnd )
 	{
 		Com_Printf( "...destroying window\n" );
+		GLW_SplitUnmarkShell( g_wv.hWnd );	// splitscreen Independent mode (R16)
 		//ShowWindow( g_wv.hWnd, SW_HIDE );
 		DestroyWindow( g_wv.hWnd );
 		g_wv.hWnd = NULL;

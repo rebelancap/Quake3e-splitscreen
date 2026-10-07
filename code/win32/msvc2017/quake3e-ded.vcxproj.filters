@@ -91,6 +91,9 @@
     <ClCompile Include="..\..\server\sv_world.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\server\sv_splitrules.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\qcommon\unzip.c">
       <Filter>Source Files</Filter>
     </ClCompile>

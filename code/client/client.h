@@ -144,8 +144,6 @@ typedef struct {
 	byte			baselineUsed[MAX_GENTITIES];
 } clientActive_t;
 
-extern	clientActive_t		cl;
-
 #define EM_GAMESTATE 1
 #define EM_SNAPSHOT  2
 #define EM_COMMAND   4
@@ -253,8 +251,6 @@ typedef struct {
 	int		demoMessageSequence;
 
 } clientConnection_t;
-
-extern	clientConnection_t clc;
 
 /*
 ==================================================================
@@ -378,7 +374,7 @@ qboolean	CL_Download( const char *cmd, const char *pakname, qboolean autoDownloa
 
 //=============================================================================
 
-extern	vm_t			*cgvm;	// interface to cgame dll or vm
+#include "cl_splitscreen.h"	// per-player contexts: cl, clc, cgvm (splitscreen)
 extern	vm_t			*uivm;	// interface to ui dll or vm
 extern	refexport_t		re;		// interface to refresh .dll
 
