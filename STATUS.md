@@ -605,6 +605,47 @@ defaults; the first save rewrites a damaged file clean):
 
 ## Last round
 
+**R23 (Windows, 2026-10-09; Opus executor; VERSION 1.0.0.1; commit
+`ebfbe91b` on `main`).** The maintainer clarified: the "floating" started
+**when the round began**, P1 on one team, P2/P3 on the other, and it was
+"walking very high at the top of the map", not spectating. **Reproduced**
+with his real configs (his live home is the **UrT install itself**:
+`q3config-ss.cfg`, `games.log`, profiles in `<UrT install>\q3ut4` /
+`profiles`; copied read-only into `work/urttest`, run in `urtauto` mode):
+FFA with 3 players, map load into TS on ut4_casa, P1 blue and spawned,
+P2/P3 red ~2 s later, two round starts (`scripts/tests/r23-round.cfg`).
+**The server is right** (origins, pm_type, cmd timing equal P1's); **the
+extra players' UrT cgame detaches**: its predicted player state stays on the
+stale pre-spawn spectator state while its own snapshots have the spawn
+(detached = predicted origin > 50 units from its snapshot, read from cgame
+memory; unfixed `work/r18-r23-round-nofix1/2.log`: P1 0/509, P2 386/480,
+P3 386/460). **Root cause** (UrT `cgame.qvm` disassembled): UrT runs
+`cg.time = serverTime - ut_timenudge` (userinfo cvar, default 25; his P1
+has 0, P2/P3 got 25, as his `games.log` shows). A cgame whose clock starts
+behind its first snapshot on a jitter-free local server takes every snapshot
+the frame it arrives, never has a `nextSnap`, and UrT's `cg_optimize`
+prediction only re-copies the server player state from a new `nextSnap`:
+it never resyncs; jitter or a long frame frees it (why R22 missed it and
+P1, whose cgame starts during level load, is spared). A/B on the unfixed
+build: P2/P3 forced to `ut_timenudge 0` -> 1/480 and 0/460
+(`r18-r23-ab-p23n0.log`); P1 at 25 still 0/509 (`r18-r23-ab-p1n25.log`).
+Not the round system, not the [ps] levers (inert in UrT, layout NONE).
+**Fix (thin hook):** `CL_CGameRendering` passes `cl.serverTime +
+CL_SplitCgameTimeShift()`; the helper (`cl_splitscreen.c`) returns that
+player's `ut_timenudge` only for UrT on our own local server (P1 on
+loopback, no demo), else 0, so the cgame clock equals the engine's as with
+a stock Q3 cgame; remote/LAN servers keep UrT's nudge (its jitter buffer).
+**Verified:** fixed runs 0 detached for all three (`r18-r23-fixb1..4.log`,
+`r18-r23-round-fix.log`, final clean build `r18-r23-round-final.log` +
+`r18-r23-round1.jpg`: all three in the world at ground level through two
+round starts); baseq3 3-player q3dm17 regression `r18-r23-q3.log/.jpg` fine.
+Harness note: UrT's cgame queues `-button13;-button14;` every frame into
+the shared command buffer, so long `wait`s in a test cfg overflow it
+("Cbuf_NestedAdd overflowed") and the script's tail is lost; R22's TS runs
+suffered this; r23 cfgs use short waits. (R22, same day: first attempt
+could not reproduce and wrongly blamed TS spectating; its recipes
+`scripts/tests/r22-*.cfg`, logs `work/r18-r22-*.log`.)
+
 **R22 (Windows, 2026-10-09; Opus executor; VERSION unchanged 1.0.0; commit
 `5fda1ebd`, test cfgs only).** The maintainer's report: offline UrT, 3
 players, Team Survivor: players 2 and 3 "float and jump to the top of the
@@ -1754,19 +1795,15 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0a. **UrT floating report (R22), the maintainer's checklist:**
-   - Did players 2 and 3 float only before a round began / after dying
-     (HUD shows spectator or "waiting"), or also after they had spawned
-     with a weapon and were playing?
-   - If after a spawn: run once with `+set developer 1 +set logfile 2`, and
-     when it happens type `srvdebug ps` in the console (P1's `~`), then send
-     `work/urthome/q3ut4/qconsole.log`. It lists each player's pm_type
-     (0 playing, 2 spectator, 3 dead), velocity-free origin and health.
-   - Which team each player picked in UrT's team menu, and whether P2/P3
-     joined while P1 was already spawned.
-   - Default if "only before the round / after dying": no engine change;
-     possible follow-up is a "spectating until the next round" hint in a
-     waiting player's viewport.
+0a. **R23 fix, the maintainer's check (1.0.0.1 in `build\Release`):**
+   - Same 3-player UrT Team Survivor session as before (P1 one team,
+     P2/P3 the other): after the round starts, and after a `map_restart`
+     / new map, P2 and P3 stay on the ground and track the server (no
+     "walking on top of the map"). Also one FFA sanity pass.
+   - Optional: a remote or LAN UrT server with P2/P3 joining late; if
+     P2/P3 detach there too, report it (the hook is local-server only;
+     the next step would be applying it to any UrT server, trading UrT's
+     25 ms interpolation buffer for correctness).
 0. **Linux / Steam Deck (M6) kicked off 2026-10-06 on the Linux test box** (GPD
    Win Mini 2025, Bazzite 43). The repo with full history is at
    `~/dev/Quake3e-splitscreen` there (branch `splitscreen` checked out,
@@ -2437,9 +2474,10 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Open questions
 
-- **R22 (2026-10-09):** is the UrT "floating" a real movement bug after
-  a spawn, or TS spectating before the round / after death? Default: UrT
-  behaving normally, no change (see Next steps 0a).
+- **R23 (2026-10-09):** should the `ut_timenudge` neutralisation also
+  apply on remote/LAN UrT servers (a late-joining extra player could lock
+  the same way on a low-jitter LAN)? Default: local server only, until a
+  remote case is seen.
 - **R21 (0.0.0.27) -- defaults taken:** (1) **No "download this map?"
   prompt:** UrT 4.3's client asks "press ANY key to download" before
   fetching; ours downloads right away (switch: `cl_autodownload 0` in
@@ -2699,9 +2737,11 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R22 (2026-10-09):** none live. No game process running; tests ran in
-  `work/urttest`, `work/urthome` and the installs only read. Clean tree,
-  branch `main` = `fix/extra-player-movement` (`5fda1ebd`).
+- **R23 (2026-10-09):** none live. No game process running; tests ran in
+  `work/urttest` (now holding copies of the maintainer's UrT configs and
+  profiles, test copies only); the UrT install (his real home) and
+  `work/urthome` only read, install SHA-256 checked before/after. Clean
+  tree, `main` = `ebfbe91b` + this STATUS commit; no branches left.
 - **R21 (2026-10-07):** none live. No game/server/HTTP process running
   (`tasklist` before every launch; every client run quit by its cfg or was
   killed by the runner's `timeout 100`; the dedicated server and
