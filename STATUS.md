@@ -605,6 +605,26 @@ defaults; the first save rewrites a damaged file clean):
 
 ## Last round
 
+**R22 (Windows, 2026-10-09; Opus executor; VERSION unchanged 1.0.0; commit
+`5fda1ebd`, test cfgs only).** The maintainer's report: offline UrT, 3
+players, Team Survivor: players 2 and 3 "float and jump to the top of the
+map", player 1 is fine. **Not reproduced** in 8 headless UrT runs on
+ut4_casa (`work/r18-r22-*.log`, recipes `scripts/tests/r22-*.cfg`): with a
+temporary per-usercmd server print (serverTime offset, msec, upmove, pm_type,
+velocity, origin) and a client view-vs-snapshot print, clients 0/1/2 had the
+same cmd timing (offset -24..-78 ms, msec 6-17), the same jump (vz 258 then
+246), gravity 800, and views within ~20 units of the server, in FFA, TS with
+bots, TS with P1 blue / P2+P3 red, at `com_maxfps 125` + `cl_maxpackets 80`,
+through a death + new round. The only floating seen was **UrT's own
+spectator movement** (pm_type 2): a player not yet spawned (refused team,
+team not chosen, or joined red while a round was already running) flies, and
+jump (A) moves it straight up to the sky. **His UrT `games.log` (read-only)
+fits that:** P1 joined blue and spawned at 1:44; P2/P3 joined red at 1:46
+and got no ClientSpawn until InitRound at 2:00, i.e. they were spectators for
+~15 s with P1 already playing; later rounds spawned all three. Default taken:
+UrT behaving normally, no engine change; awaiting the maintainer's answers
+(Next steps 0a).
+
 **R21 (Windows, 2026-10-07; Opus executor; VERSION 0.0.0.27;
 commits `c0764a42`..`2d30ac9a` + this docs commit).** The maintainer's join to
 74.91.113.242 with 0.0.0.26 still ended in `couldn't load
@@ -1734,6 +1754,19 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
+0a. **UrT floating report (R22), the maintainer's checklist:**
+   - Did players 2 and 3 float only before a round began / after dying
+     (HUD shows spectator or "waiting"), or also after they had spawned
+     with a weapon and were playing?
+   - If after a spawn: run once with `+set developer 1 +set logfile 2`, and
+     when it happens type `srvdebug ps` in the console (P1's `~`), then send
+     `work/urthome/q3ut4/qconsole.log`. It lists each player's pm_type
+     (0 playing, 2 spectator, 3 dead), velocity-free origin and health.
+   - Which team each player picked in UrT's team menu, and whether P2/P3
+     joined while P1 was already spawned.
+   - Default if "only before the round / after dying": no engine change;
+     possible follow-up is a "spectating until the next round" hint in a
+     waiting player's viewport.
 0. **Linux / Steam Deck (M6) kicked off 2026-10-06 on the Linux test box** (GPD
    Win Mini 2025, Bazzite 43). The repo with full history is at
    `~/dev/Quake3e-splitscreen` there (branch `splitscreen` checked out,
@@ -2404,6 +2437,9 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Open questions
 
+- **R22 (2026-10-09):** is the UrT "floating" a real movement bug after
+  a spawn, or TS spectating before the round / after death? Default: UrT
+  behaving normally, no change (see Next steps 0a).
 - **R21 (0.0.0.27) -- defaults taken:** (1) **No "download this map?"
   prompt:** UrT 4.3's client asks "press ANY key to download" before
   fetching; ours downloads right away (switch: `cl_autodownload 0` in
@@ -2663,6 +2699,9 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
+- **R22 (2026-10-09):** none live. No game process running; tests ran in
+  `work/urttest`, `work/urthome` and the installs only read. Clean tree,
+  branch `main` = `fix/extra-player-movement` (`5fda1ebd`).
 - **R21 (2026-10-07):** none live. No game/server/HTTP process running
   (`tasklist` before every launch; every client run quit by its cfg or was
   killed by the runner's `timeout 100`; the dedicated server and
