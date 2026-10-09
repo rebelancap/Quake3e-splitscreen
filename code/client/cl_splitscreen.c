@@ -936,6 +936,42 @@ cvar_t *CL_SplitShadow( int n, const char *name, const char *defaultValue ) {
 
 /*
 ==================
+CL_SplitCgameTimeShift
+
+Urban Terror 4.3's cgame runs at serverTime - ut_timenudge (its own
+interpolation delay, default 25 ms; a userinfo cvar, so every local
+player has one).  On a local server the snapshots come exactly on time,
+and a cgame whose clock starts behind its first snapshot (a cgame start,
+a map_restart time reset) then takes each new snapshot the frame it
+arrives and never has a next snapshot; its cg_optimize prediction then
+never re-reads the server's player state again: the player's own view
+runs on client-side physics from a stale state (players 2 and 3 "walking
+on top of the map" after a round start, R23).  A network jitter or a
+long frame frees it; a local game may never have one.  On our own server
+the nudge only adds input lag, so the cgame gets that much more time and
+its clock is the engine's, as with a stock Quake 3 cgame.
+==================
+*/
+int CL_SplitCgameTimeShift( void ) {
+	const char *v;
+	int n;
+
+	if ( clc.demoplaying || !com_sv_running || !com_sv_running->integer || !CL_SplitSrvUrT()
+		|| !clx[ 0 ] || clx[ 0 ]->clConn.serverAddress.type != NA_LOOPBACK ) {
+		return 0;	// a remote server (extra players join player 1's server) keeps the game's nudge
+	}
+	if ( cla->playerNum && CL_SplitShadowed( "ut_timenudge", 0 ) ) {
+		v = CL_SplitShadow( cla->playerNum, "ut_timenudge", NULL )->string;
+	} else {
+		v = Cvar_VariableString( "ut_timenudge" );
+	}
+	n = atoi( v );
+	return ( n > 0 && n <= 1000 ) ? n : 0;
+}
+
+
+/*
+==================
 CL_SplitBuildUserinfo
 ==================
 */

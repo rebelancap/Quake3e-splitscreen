@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0.1 (dev)
+
+- Urban Terror, local games: players 2+ no longer end up "walking on top of
+  the map" after a round start. With UrT's default `ut_timenudge` (25) their
+  game stopped following the server's position after it started; on your own
+  server the nudge is now neutralised (remote servers unchanged).
+
 ## 1.0.0
 
 First public release of Quake3e-splitscreen: local splitscreen for Quake III

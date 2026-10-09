@@ -170,6 +170,7 @@ int		CL_SplitNumViews( void );
 void	CL_SplitToldSize( int ctxNum, int *w, int *h );
 qboolean CL_SplitShadowed( const char *name, int extraFlags );
 cvar_t	*CL_SplitShadow( int n, const char *name, const char *defaultValue );
+int		CL_SplitCgameTimeShift( void );
 const char *CL_SplitBuildUserinfo( int n, qboolean *truncated );
 qboolean CL_SplitRunUI( int n, void (*func)( void ) );	// guarded: an error closes only n's menu
 int		CL_SplitKeyCatcher( void );	// key catchers as the active player sees them
