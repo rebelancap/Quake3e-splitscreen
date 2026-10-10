@@ -1021,6 +1021,18 @@ static void SR_Debug_f( void ) {
 		}
 		Com_Printf( "  time %i respawn:%s\n", sv.time, buf[0] ? buf : " (no such cvars)" );
 	}
+	{
+		// R25: the round rows' cvars (Round time, Max rounds, Sudden death, Swap roles, Spawn protection, Warmup)
+		static const char *rnd[] = { "g_roundtime", "g_maxrounds", "g_suddendeath", "g_swaproles", "g_respawnprotection",
+			"g_warmup", "g_doWarmup", NULL };
+		buf[0] = '\0';
+		for ( w = 0; rnd[w]; w++ ) {
+			if ( Cvar_Flags( rnd[w] ) != CVAR_NONEXISTENT ) {
+				Q_strcat( buf, sizeof( buf ), va( " %s %s", rnd[w], Cvar_VariableString( rnd[w] ) ) );
+			}
+		}
+		Com_Printf( "  rounds:%s\n", buf[0] ? buf : " (no such cvars)" );
+	}
 	for ( i = 0; i < sv.maxclients; i++ ) {
 		if ( svs.clients[i].state != CS_ACTIVE ) {
 			continue;

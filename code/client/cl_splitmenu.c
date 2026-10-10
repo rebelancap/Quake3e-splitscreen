@@ -1448,10 +1448,11 @@ static const char *smGodLabels[] = { "Off", "All players", "Player 1", "Player 2
 	"Player 5", "Player 6", "Player 7", "Player 8" };
 
 // number lists made once: time 0, 5..60; frags 0, 5..100; captures 0..20; bots 0..20; health 0, 95..5;
-// weapon respawn 0, 1..30 s; player speed 50..200 % (no zero entry); R24 respawn time 0, 1..15 s
-static char smNumText[8][32][16], smNumVal[8][32][8];
-static const char *smNumValues[8][32], *smNumLabels[8][32];
-static int smNumCount[8];
+// weapon respawn 0, 1..30 s; player speed 50..200 % (no zero entry); R24 respawn time 0, 1..15 s;
+// R25 (SM_NumListDef: -1 = Default first): max rounds, spawn protection, warmup; round time 0, 0.5..10 min
+static char smNumText[12][32][16], smNumVal[12][32][8];
+static const char *smNumValues[12][32], *smNumLabels[12][32];
+static int smNumCount[12];
 
 static void SM_NumList( int list, int first, int step, int last, const char *zero, const char *unit ) {
 	int v, k = 0;
@@ -1469,6 +1470,48 @@ static void SM_NumList( int list, int first, int step, int last, const char *zer
 		Com_sprintf( smNumVal[list][k], sizeof( smNumVal[0][0] ), "%i", v );
 		smNumValues[list][k] = smNumVal[list][k];
 		k++;
+	}
+	smNumCount[list] = k;
+}
+
+// R25: "-1" Default, "0" zero (when given), then first..last by step
+static void SM_NumListDef( int list, const char *zero, int first, int step, int last, const char *unit ) {
+	int v, k = 0;
+
+	if ( smNumCount[list] ) {
+		return;
+	}
+	smNumValues[list][k] = "-1";
+	smNumLabels[list][k++] = "Default";
+	if ( zero ) {
+		smNumValues[list][k] = "0";
+		smNumLabels[list][k++] = zero;
+	}
+	for ( v = first; v <= last && k < 32; v += step ) {
+		Com_sprintf( smNumText[list][k], sizeof( smNumText[0][0] ), "%i%s", v, unit );
+		smNumLabels[list][k] = smNumText[list][k];
+		Com_sprintf( smNumVal[list][k], sizeof( smNumVal[0][0] ), "%i", v );
+		smNumValues[list][k] = smNumVal[list][k];
+		k++;
+	}
+	smNumCount[list] = k;
+}
+
+// R25: Round time: "0" Default, then 1..10 min by 0.5 (UrT takes fractions of a minute; its game
+// init puts a g_roundtime below 1 back to 3, so no 0.5)
+static void SM_RoundTimeList( int list ) {
+	int h, k = 0;
+
+	if ( smNumCount[list] ) {
+		return;
+	}
+	smNumValues[list][k] = "0";
+	smNumLabels[list][k++] = "Default";
+	for ( h = 2; h <= 20; h++, k++ ) {
+		Com_sprintf( smNumText[list][k], sizeof( smNumText[0][0] ), ( h & 1 ) ? "%i.5 min" : "%i min", h / 2 );
+		smNumLabels[list][k] = smNumText[list][k];
+		Com_sprintf( smNumVal[list][k], sizeof( smNumVal[0][0] ), ( h & 1 ) ? "%i.5" : "%i", h / 2 );
+		smNumValues[list][k] = smNumVal[list][k];
 	}
 	smNumCount[list] = k;
 }
@@ -1515,6 +1558,7 @@ static void SM_BuildServer( int n ) {
 	const char *pending = CL_SplitSrvPending();
 	const char *set = CL_SplitSrvActiveSet();
 	qboolean speedOk, respawnOk, powerupsOff, urtRespawn, deathOk, waveOk;
+	qboolean roundOk, maxOk, suddenOk, swapOk, protectOk, warmOk;
 	int i, w;
 	smRow_t *r;
 
@@ -1526,6 +1570,10 @@ static void SM_BuildServer( int n ) {
 	SM_NumList( 5, 1, 1, 30, "Default", " s" );
 	SM_NumList( 6, 50, 10, 200, NULL, "%" );
 	SM_NumList( 7, 1, 1, 15, "Default", " s" );
+	SM_NumListDef( 8, "Unlimited", 1, 1, 30, "" );
+	SM_NumListDef( 9, "Off", 1, 1, 10, " s" );
+	SM_NumListDef( 10, "Off", 5, 5, 30, " s" );
+	SM_RoundTimeList( 11 );
 
 	SM_Title( set[0] ? va( "Server options - %s", set ) : "Server options" );
 
@@ -1648,6 +1696,40 @@ static void SM_BuildServer( int n ) {
 	r = SM_Help( SM_Choice( "Wave respawns", "cl_splitSrvWaveRespawns", smWaveValues, smWaveLabels, ARRAY_LEN( smWaveValues ) ),
 		waveOk ? "Team games: a team respawns together (waits up to Respawn time more). Now." : "Not available in this game (UrT only)." );
 	r->disabled = !waveOk;
+	// R25: round rows [native], UrT only but greyed by the running game's cvars (a game we do not
+	// know may have them too); Round time / Max rounds / Sudden death / Spawn protection live (the
+	// game reads them at the next round / match end / spawn), Swap roles (latched in UrT) and Warmup
+	// on leaving with one restart
+	roundOk = ( local ? Cvar_Flags( "g_roundtime" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Round time", "cl_splitSrvRoundTime", smNumValues[11], smNumLabels[11], smNumCount[11] ),
+		roundOk ? "Minutes per round (TS, Bomb...). Next round." : "Not available in this game (UrT only)." );
+	r->disabled = !roundOk;
+	r->helpWrap = qtrue;
+	maxOk = ( local ? Cvar_Flags( "g_maxrounds" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Max rounds", "cl_splitSrvMaxRounds", smNumValues[8], smNumLabels[8], smNumCount[8] ),
+		maxOk ? "Rounds per match; drawn rounds count. Now." : "Not available in this game (UrT only)." );
+	r->disabled = !maxOk;
+	r->helpWrap = qtrue;
+	suddenOk = ( local ? Cvar_Flags( "g_suddendeath" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Sudden death", "cl_splitSrvSuddenDeath", smWaveValues, smWaveLabels, ARRAY_LEN( smWaveValues ) ),
+		suddenOk ? "Tied at the end: one more round. Now." : "Not available in this game (UrT only)." );
+	r->disabled = !suddenOk;
+	r->helpWrap = qtrue;
+	swapOk = ( local ? Cvar_Flags( "g_swaproles" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Swap roles", "cl_splitSrvSwapRoles", smWaveValues, smWaveLabels, ARRAY_LEN( smWaveValues ) ),
+		swapOk ? "Second half with teams swapped. Restarts." : "Not available in this game (UrT only)." );
+	r->disabled = !swapOk;
+	r->helpWrap = qtrue;
+	protectOk = ( local ? Cvar_Flags( "g_respawnprotection" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Spawn protection", "cl_splitSrvSpawnProtection", smNumValues[9], smNumLabels[9], smNumCount[9] ),
+		protectOk ? "Seconds a fresh spawn can't be hurt. Now." : "Not available in this game (UrT only)." );
+	r->disabled = !protectOk;
+	r->helpWrap = qtrue;
+	warmOk = ( !local || Cvar_Flags( "g_warmup" ) != CVAR_NONEXISTENT ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Warmup", "cl_splitSrvWarmup", smNumValues[10], smNumLabels[10], smNumCount[10] ),
+		warmOk ? "Seconds before the match starts. Restarts." : "Not available in this game." );
+	r->disabled = !warmOk;
+	r->helpWrap = qtrue;
 	SM_Help( SM_Slider( "Game volume", "s_volume", 0, 1.5f, 0.1f, "%.0f%%", 100 ), "Master volume of this game window. Now." );
 	SM_Help( SM_Action( "Reset to defaults", SM_SrvReset, 0 ), "Every option back to default; the map stays." );
 	SM_Help( SM_Sub( "Select server settings", &smSrvSets ), "Load a saved set of these options." );

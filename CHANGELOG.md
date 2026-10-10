@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0.3 (dev)
+
+- Server options, Urban Terror round games (Team Survivor, Bomb, ...): new rows
+  **Round time** (Default / 1-10 min, from the next round), **Max rounds**
+  (Default / Unlimited / 1-30), **Sudden death** (tied match: one more round),
+  **Spawn protection** (Default / Off / 1-10 s) and **Swap roles** (second half
+  with teams swapped; restarts the map when you leave the page). Greyed in
+  Quake 3.
+- Server options: new **Warmup** row (Default / Off / 5-30 s; Urban Terror
+  `g_warmup`, Quake 3 `g_doWarmup` + `g_warmup`); restarts the map when you
+  leave the page.
+
 ## 1.0.0.2 (dev)
 
 - Server options: new **Respawn time** row (Default / 1-15 s, default 3 s,

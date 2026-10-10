@@ -32,7 +32,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //    when it is left, with one restart; Player speed / Weapon respawn (R16) are
 //    written into the game's g_speed / g_weaponrespawn every frame (live), and so are
 //    Respawn time / Wave respawns (R24: UrT g_respawndelay + g_redwave / g_bluewave,
-//    g_waverespawns; baseq3-style games g_forcerespawn);
+//    g_waverespawns; baseq3-style games g_forcerespawn) and the R25 round rows Round time /
+//    Max rounds / Sudden death / Spawn protection (UrT g_roundtime, g_maxrounds,
+//    g_suddendeath, g_respawnprotection); Swap roles and Warmup (UrT g_swaproles,
+//    g_warmup; baseq3 g_doWarmup + g_warmup) are read at map start: held back while the
+//    page is open like Quad damage, then one restart;
 //  - a pending map and game type (cl_splitSrvMap / cl_splitSrvGametype, temp),
 //    loaded when the page is left.
 // Saved sets: <homepath>/<game>/serversettings/<key>.cfg, `cvar "value"` lines.
@@ -47,6 +51,7 @@ static cvar_t *srvInstagib, *srvWeapons, *srvSpawn, *srvAmmo, *srvBots, *srvBotS
 static cvar_t *srvSelfDamage, *srvGod, *srvHealth, *srvSet, *srvMap, *srvGametype;
 static cvar_t *srvQuad, *srvSpeed, *srvWeapRespawn, *srvModInsta, *srvPowerups;
 static cvar_t *srvRespawnTime, *srvWave;
+static cvar_t *srvRoundTime, *srvMaxRounds, *srvSudden, *srvSwap, *srvProtect, *srvWarmup;	// R25
 
 // R24: a game cvar the page holds at a value; a value we did not write is the game's own
 // (its base), given back once when the row goes to Default
@@ -56,9 +61,12 @@ typedef struct {
 	char		applied[32];	// what we set it to, "" = untouched
 } srvHold_t;
 
-enum { SRV_H_RESPAWNDELAY, SRV_H_REDWAVE, SRV_H_BLUEWAVE, SRV_H_FORCERESPAWN, SRV_H_WAVES, SRV_H_COUNT };
+enum { SRV_H_RESPAWNDELAY, SRV_H_REDWAVE, SRV_H_BLUEWAVE, SRV_H_FORCERESPAWN, SRV_H_WAVES,
+	SRV_H_ROUNDTIME, SRV_H_MAXROUNDS, SRV_H_SUDDEN, SRV_H_SWAP, SRV_H_PROTECT, SRV_H_WARMUP, SRV_H_DOWARMUP, SRV_H_COUNT };
 static srvHold_t srvHolds[ SRV_H_COUNT ] = {
-	{ "g_respawndelay" }, { "g_redwave" }, { "g_bluewave" }, { "g_forcerespawn" }, { "g_waverespawns" }
+	{ "g_respawndelay" }, { "g_redwave" }, { "g_bluewave" }, { "g_forcerespawn" }, { "g_waverespawns" },
+	{ "g_roundtime" }, { "g_maxrounds" }, { "g_suddendeath" }, { "g_swaproles" }, { "g_respawnprotection" },
+	{ "g_warmup" }, { "g_doWarmup" }
 };
 
 static struct {
@@ -67,6 +75,8 @@ static struct {
 	char		weapons[32];
 	char		quad[8];
 	char		powerups[8];		// R17
+	char		swap[8];			// R25: Swap roles / Warmup as the server has them
+	char		warmup[8];
 	char		speedBase[32];		// g_speed as the game had it (R16 Player speed)
 	char		speedApplied[32];	// what we set it to, "" = untouched
 	int			respawnApplied;		// g_weaponrespawn we set, 0 = untouched
@@ -93,7 +103,9 @@ static const char *srvSetCvars[] = {
 	"cl_splitSrvBots", "cl_splitSrvBotSkill", "g_friendlyFire", "cl_splitSrvSelfDamage",
 	"cl_splitSrvGod", "cl_splitSrvHealth", "g_gravity", "cl_splitSrvQuad", "cl_splitSrvSpeed",
 	"cl_splitSrvWeaponRespawn", "cl_splitSrvModInstagib", "cl_splitSrvPowerups",
-	"cl_splitSrvRespawnTime", "cl_splitSrvWaveRespawns", NULL
+	"cl_splitSrvRespawnTime", "cl_splitSrvWaveRespawns",
+	"cl_splitSrvRoundTime", "cl_splitSrvMaxRounds", "cl_splitSrvSuddenDeath", "cl_splitSrvSwapRoles",
+	"cl_splitSrvSpawnProtection", "cl_splitSrvWarmup", NULL
 };
 
 
@@ -180,6 +192,8 @@ static void SRV_Sync( void ) {
 		Q_strncpyz( srv.weapons, srvWeapons->string, sizeof( srv.weapons ) );
 		Q_strncpyz( srv.quad, srvQuad->string, sizeof( srv.quad ) );
 		Q_strncpyz( srv.powerups, srvPowerups->string, sizeof( srv.powerups ) );
+		Q_strncpyz( srv.swap, srvSwap->string, sizeof( srv.swap ) );
+		Q_strncpyz( srv.warmup, srvWarmup->string, sizeof( srv.warmup ) );
 	}
 	// a game with its own instagib (R16): not our preset; while it is on, no weapon levers
 	Cvar_Set( "sv_splitInstagib", CL_SplitSrvModInstagib()[0] ? "0" : srv.instagib );
@@ -360,6 +374,78 @@ static void SRV_RespawnTime( qboolean local ) {
 }
 
 
+// R25: SRV_Hold and a console line when it wrote something
+static void SRV_HoldNote( int h, const char *want, const char *what ) {
+	if ( SRV_Hold( &srvHolds[h], want ) ) {
+		Com_Printf( "Server options: %s %s (%s)\n", what, want ? want : "back to the game's own", srvHolds[h].name );
+	}
+}
+
+
+// R25: -1 = Default (the game's own), else the integer as a string
+static const char *SRV_IntWant( int v, char *buf, int size ) {
+	if ( v < 0 ) {
+		return NULL;
+	}
+	Com_sprintf( buf, size, "%i", v );
+	return buf;
+}
+
+
+// R25: Swap roles / Warmup differ from what the server has (they need a restart)
+static qboolean SRV_SwapChanged( void ) {
+	return ( Cvar_Flags( "g_swaproles" ) != CVAR_NONEXISTENT && atoi( srvSwap->string ) != atoi( srv.swap ) ) ? qtrue : qfalse;
+}
+
+static qboolean SRV_WarmupChanged( void ) {
+	return ( Cvar_Flags( "g_warmup" ) != CVAR_NONEXISTENT && atoi( srvWarmup->string ) != atoi( srv.warmup ) ) ? qtrue : qfalse;
+}
+
+
+/*
+==================
+SRV_RoundRules
+
+The R25 round rows, native cvars held like Respawn time (a value we did not
+write is the game's own; Default gives it back once).  Live (the game reads them
+at the next round / spawn / match end): Round time (UrT g_roundtime, minutes,
+fractions work, not below 1: UrT's game init resets that to 3), Max rounds
+(g_maxrounds, 0 = unlimited, drawn rounds count), Sudden death (g_suddendeath),
+Spawn protection (g_respawnprotection, seconds).  Read at map
+start, so from srv.swap / srv.warmup (held while the page is open, applied with
+the restart when it is left): Swap roles (UrT g_swaproles, a latched cvar) and
+Warmup (UrT g_warmup; games with g_doWarmup but not UrT: g_doWarmup 0 / 1 plus
+g_warmup seconds).
+==================
+*/
+static void SRV_RoundRules( qboolean local ) {
+	char want[16];
+	const int warm = atoi( srv.warmup );
+
+	if ( !local ) {
+		return;
+	}
+	if ( srvRoundTime->value > 0.0f ) {
+		Com_sprintf( want, sizeof( want ), "%g", srvRoundTime->value );
+		SRV_HoldNote( SRV_H_ROUNDTIME, want, "round time" );
+	} else {
+		SRV_HoldNote( SRV_H_ROUNDTIME, NULL, "round time" );
+	}
+	SRV_HoldNote( SRV_H_MAXROUNDS, SRV_IntWant( srvMaxRounds->integer, want, sizeof( want ) ), "max rounds" );
+	SRV_HoldNote( SRV_H_SUDDEN, SRV_IntWant( srvSudden->integer, want, sizeof( want ) ), "sudden death" );
+	SRV_HoldNote( SRV_H_PROTECT, SRV_IntWant( srvProtect->integer, want, sizeof( want ) ), "spawn protection" );
+	SRV_HoldNote( SRV_H_SWAP, SRV_IntWant( atoi( srv.swap ), want, sizeof( want ) ), "swap roles" );
+	if ( CL_SplitSrvUrT() || Cvar_Flags( "g_doWarmup" ) == CVAR_NONEXISTENT ) {
+		// UrT: g_warmup alone (UrT's g_doWarmup is not its switch)
+		SRV_HoldNote( SRV_H_WARMUP, SRV_IntWant( warm, want, sizeof( want ) ), "warmup" );
+	} else {
+		// baseq3-style: g_doWarmup switches it; g_warmup is the length (Off keeps the game's own length)
+		SRV_HoldNote( SRV_H_DOWARMUP, warm < 0 ? NULL : warm ? "1" : "0", "warmup" );
+		SRV_HoldNote( SRV_H_WARMUP, warm > 0 ? SRV_IntWant( warm, want, sizeof( want ) ) : NULL, "warmup length" );
+	}
+}
+
+
 /*
 ==================
 CL_SplitSrvFrame
@@ -393,6 +479,7 @@ void CL_SplitSrvFrame( void ) {
 	SRV_Speed( local );
 	SRV_WeaponRespawn( local );
 	SRV_RespawnTime( local );
+	SRV_RoundRules( local );
 }
 
 
@@ -464,6 +551,12 @@ const char *CL_SplitSrvPending( void ) {
 	if ( Q_stricmp( srvInstagib->string, srv.instagib ) || Q_stricmp( srvWeapons->string, srv.weapons ) || Q_stricmp( srvQuad->string, srv.quad ) || Q_stricmp( srvPowerups->string, srv.powerups ) ) {
 		return "restarts the map";
 	}
+	if ( SRV_WarmupChanged() ) {
+		return "restarts the map (warmup)";
+	}
+	if ( SRV_SwapChanged() ) {
+		return "restarts the map (swap roles)";
+	}
 	if ( srvBots->integer > 0 && need > SV_SplitMaxClients() ) {
 		return "restarts the map (room for the bots)";
 	}
@@ -492,7 +585,7 @@ void CL_SplitSrvLeave( void ) {
 	load = ( local && map[0] && ( Q_stricmp( map, srv.openMap ) || srvGametype->integer != srv.openGametype
 		|| ( srvBots->integer > 0 && !SV_SplitBotsEnabled() ) ) ) ? qtrue : qfalse;
 	restart = ( local && !load && ( Q_stricmp( srvInstagib->string, srv.instagib ) || Q_stricmp( srvWeapons->string, srv.weapons ) || Q_stricmp( srvQuad->string, srv.quad ) || Q_stricmp( srvPowerups->string, srv.powerups ) || modChanged
-		|| ( srvBots->integer > 0 && need > SV_SplitMaxClients() ) ) ) ? qtrue : qfalse;
+		|| SRV_WarmupChanged() || SRV_SwapChanged() || ( srvBots->integer > 0 && need > SV_SplitMaxClients() ) ) ) ? qtrue : qfalse;
 	srv.editing = qfalse;
 	if ( modChanged ) {
 		// the game's own instagib (latched in some games: the restart / load below reads it)
@@ -500,6 +593,7 @@ void CL_SplitSrvLeave( void ) {
 		Com_Printf( "Server options: %s %s (the game's own instagib)\n", mod, srvModInsta->integer ? "1" : "0" );
 	}
 	SRV_Sync();		// instagib / weapons go to the server now
+	SRV_RoundRules( local );	// R25: swap roles / warmup into the game's cvars before the restart reads them
 
 	if ( local && srvBots->integer > 0 && need > Cvar_VariableIntegerValue( "sv_maxclients" ) ) {
 		Cvar_Set( "sv_maxclients", va( "%i", need ) );	// latched: the restart below
@@ -532,7 +626,8 @@ void CL_SplitSrvRestartRound( void ) {
 void CL_SplitSrvReset( void ) {
 	static const char *natives[] = { "timelimit", "fraglimit", "capturelimit", "g_friendlyFire", "g_gravity", NULL };
 	cvar_t *ours[] = { srvInstagib, srvWeapons, srvSpawn, srvAmmo, srvBots, srvBotSkill, srvSelfDamage, srvGod, srvHealth,
-		srvQuad, srvSpeed, srvWeapRespawn, srvPowerups, srvRespawnTime, srvWave };
+		srvQuad, srvSpeed, srvWeapRespawn, srvPowerups, srvRespawnTime, srvWave,
+		srvRoundTime, srvMaxRounds, srvSudden, srvSwap, srvProtect, srvWarmup };
 	int i;
 
 	for ( i = 0; i < (int)ARRAY_LEN( ours ); i++ ) {
@@ -832,6 +927,27 @@ void CL_SplitSrvInit( void ) {
 	srvWave = Cvar_Get( "cl_splitSrvWaveRespawns", "0", CVAR_ARCHIVE_ND );	// off: Respawn time means what it says
 	Cvar_CheckRange( srvWave, "-1", "1", CV_INTEGER );
 	Cvar_SetDescription( srvWave, "Server options (Urban Terror): wave respawns, 1 on, 0 off (g_waverespawns, our default off so Respawn time is exact); -1 = the game's own." );
+	// R25: round rows, Default (the game's own) unless set
+	srvRoundTime = Cvar_Get( "cl_splitSrvRoundTime", "0", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvRoundTime, "0", "10", CV_FLOAT );
+	Cvar_SetDescription( srvRoundTime, "Server options (Urban Terror): minutes per round 1..10 by 0.5 (g_roundtime; round game types; UrT resets values below 1 to 3 at map start); 0 = the game's own." );
+	srvMaxRounds = Cvar_Get( "cl_splitSrvMaxRounds", "-1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvMaxRounds, "-1", "30", CV_INTEGER );
+	Cvar_SetDescription( srvMaxRounds, "Server options (Urban Terror): rounds per match 1..30, 0 unlimited (g_maxrounds); -1 = the game's own." );
+	srvSudden = Cvar_Get( "cl_splitSrvSuddenDeath", "-1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvSudden, "-1", "1", CV_INTEGER );
+	Cvar_SetDescription( srvSudden, "Server options (Urban Terror): 1 = a match tied at the end gets one more round (g_suddendeath), 0 off; -1 = the game's own." );
+	srvSwap = Cvar_Get( "cl_splitSrvSwapRoles", "-1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvSwap, "-1", "1", CV_INTEGER );
+	Cvar_SetDescription( srvSwap, "Server options (Urban Terror): 1 = teams swap sides (g_swaproles), 0 off; "
+		"-1 = the game's own. Applies with a restart." );
+	srvProtect = Cvar_Get( "cl_splitSrvSpawnProtection", "-1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvProtect, "-1", "10", CV_INTEGER );
+	Cvar_SetDescription( srvProtect, "Server options (Urban Terror): seconds a fresh spawn cannot be hurt, 0..10 (g_respawnprotection); -1 = the game's own." );
+	srvWarmup = Cvar_Get( "cl_splitSrvWarmup", "-1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvWarmup, "-1", "60", CV_INTEGER );
+	Cvar_SetDescription( srvWarmup, "Server options: seconds of warmup before a match, 0 = off (Urban Terror g_warmup; Quake 3 g_doWarmup + g_warmup); "
+		"-1 = the game's own. Applies with a restart." );
 	srvMap = Cvar_Get( "cl_splitSrvMap", "", CVAR_TEMP );
 	srvGametype = Cvar_Get( "cl_splitSrvGametype", "0", CVAR_TEMP );
 	srvModInsta = Cvar_Get( "cl_splitSrvModInstagib", "0", CVAR_TEMP );
