@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0.2 (dev)
+
+- Server options: new **Respawn time** row (Default / 1-15 s, default 3 s,
+  applies now). Urban Terror: sets `g_respawndelay` and the team wave period
+  (`g_redwave` / `g_bluewave`); Quake 3: respawn by itself after that time.
+- Server options: new **Wave respawns** row (Off / On / Default, Urban Terror
+  only, `g_waverespawns`), **Off by default** in local games so Respawn time
+  is exact; On makes a team respawn together (adds up to one respawn time).
+
 ## 1.0.0.1 (dev)
 
 - Urban Terror, local games: players 2+ no longer end up "walking on top of

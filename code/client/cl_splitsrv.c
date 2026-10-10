@@ -30,7 +30,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //    (server/sv_splitrules.c; a dedicated server never has them).  Instagib,
 //    Weapons, Quad damage and Power-ups (R17) are held back while the page is open: they apply
 //    when it is left, with one restart; Player speed / Weapon respawn (R16) are
-//    written into the game's g_speed / g_weaponrespawn every frame (live);
+//    written into the game's g_speed / g_weaponrespawn every frame (live), and so are
+//    Respawn time / Wave respawns (R24: UrT g_respawndelay + g_redwave / g_bluewave,
+//    g_waverespawns; baseq3-style games g_forcerespawn);
 //  - a pending map and game type (cl_splitSrvMap / cl_splitSrvGametype, temp),
 //    loaded when the page is left.
 // Saved sets: <homepath>/<game>/serversettings/<key>.cfg, `cvar "value"` lines.
@@ -44,6 +46,20 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static cvar_t *srvInstagib, *srvWeapons, *srvSpawn, *srvAmmo, *srvBots, *srvBotSkill;
 static cvar_t *srvSelfDamage, *srvGod, *srvHealth, *srvSet, *srvMap, *srvGametype;
 static cvar_t *srvQuad, *srvSpeed, *srvWeapRespawn, *srvModInsta, *srvPowerups;
+static cvar_t *srvRespawnTime, *srvWave;
+
+// R24: a game cvar the page holds at a value; a value we did not write is the game's own
+// (its base), given back once when the row goes to Default
+typedef struct {
+	const char	*name;
+	char		base[32];
+	char		applied[32];	// what we set it to, "" = untouched
+} srvHold_t;
+
+enum { SRV_H_RESPAWNDELAY, SRV_H_REDWAVE, SRV_H_BLUEWAVE, SRV_H_FORCERESPAWN, SRV_H_WAVES, SRV_H_COUNT };
+static srvHold_t srvHolds[ SRV_H_COUNT ] = {
+	{ "g_respawndelay" }, { "g_redwave" }, { "g_bluewave" }, { "g_forcerespawn" }, { "g_waverespawns" }
+};
 
 static struct {
 	qboolean	editing;			// the page is open: instagib / weapons / quad wait
@@ -76,7 +92,8 @@ static const char *srvSetCvars[] = {
 	"cl_splitSrvInstagib", "cl_splitSrvWeapons", "cl_splitSrvSpawnWeapons", "cl_splitSrvInfiniteAmmo",
 	"cl_splitSrvBots", "cl_splitSrvBotSkill", "g_friendlyFire", "cl_splitSrvSelfDamage",
 	"cl_splitSrvGod", "cl_splitSrvHealth", "g_gravity", "cl_splitSrvQuad", "cl_splitSrvSpeed",
-	"cl_splitSrvWeaponRespawn", "cl_splitSrvModInstagib", "cl_splitSrvPowerups", NULL
+	"cl_splitSrvWeaponRespawn", "cl_splitSrvModInstagib", "cl_splitSrvPowerups",
+	"cl_splitSrvRespawnTime", "cl_splitSrvWaveRespawns", NULL
 };
 
 
@@ -265,6 +282,84 @@ static void SRV_WeaponRespawn( qboolean local ) {
 }
 
 
+// R24: hold a game cvar at want (NULL = give the game's own value back, once); qtrue = written
+static qboolean SRV_Hold( srvHold_t *h, const char *want ) {
+	char cur[32];
+
+	if ( Cvar_Flags( h->name ) == CVAR_NONEXISTENT ) {
+		return qfalse;
+	}
+	Q_strncpyz( cur, Cvar_VariableString( h->name ), sizeof( cur ) );
+	if ( !h->applied[0] || strcmp( cur, h->applied ) ) {
+		// a value we did not write (the game's default, a config, a vote): the new base
+		Q_strncpyz( h->base, cur, sizeof( h->base ) );
+		h->applied[0] = '\0';
+	}
+	if ( !want ) {
+		if ( h->applied[0] ) {
+			h->applied[0] = '\0';
+			if ( strcmp( cur, h->base ) ) {
+				Cvar_Set( h->name, h->base );
+				return qtrue;
+			}
+		}
+		return qfalse;
+	}
+	Q_strncpyz( h->applied, want, sizeof( h->applied ) );
+	if ( strcmp( cur, want ) ) {
+		Cvar_Set( h->name, want );
+		return qtrue;
+	}
+	return qfalse;
+}
+
+
+/*
+==================
+SRV_RespawnTime
+
+Respawn time / Wave respawns (R24), live.  Urban Terror: g_respawndelay (seconds
+dead before the respawn) and, so that wave respawns do not defeat it, the team
+wave period g_redwave / g_bluewave; g_waverespawns on / off.  A game without
+g_respawndelay (baseq3, missionpack, OSP): g_forcerespawn, the seconds after
+which a dead player respawns without pressing fire (fire still respawns after
+the game's own 1.7 s).
+==================
+*/
+static void SRV_RespawnTime( qboolean local ) {
+	const int s = srvRespawnTime->integer;
+	const int wave = srvWave->integer;
+	char want[16];
+	const char *w = NULL;
+	qboolean changed = qfalse;
+
+	if ( !local ) {
+		return;
+	}
+	if ( s > 0 ) {
+		Com_sprintf( want, sizeof( want ), "%i", s );
+		w = want;
+	}
+	if ( Cvar_Flags( srvHolds[ SRV_H_RESPAWNDELAY ].name ) != CVAR_NONEXISTENT ) {
+		changed |= SRV_Hold( &srvHolds[ SRV_H_RESPAWNDELAY ], w );
+		changed |= SRV_Hold( &srvHolds[ SRV_H_REDWAVE ], w );
+		changed |= SRV_Hold( &srvHolds[ SRV_H_BLUEWAVE ], w );
+	} else {
+		changed |= SRV_Hold( &srvHolds[ SRV_H_FORCERESPAWN ], w );
+	}
+	if ( changed ) {
+		if ( w ) {
+			Com_Printf( "Server options: respawn time %i s\n", s );
+		} else {
+			Com_Printf( "Server options: respawn time back to the game's own\n" );
+		}
+	}
+	if ( SRV_Hold( &srvHolds[ SRV_H_WAVES ], wave < 0 ? NULL : wave ? "1" : "0" ) ) {
+		Com_Printf( "Server options: wave respawns %s\n", wave < 0 ? "back to the game's own" : wave ? "on" : "off" );
+	}
+}
+
+
 /*
 ==================
 CL_SplitSrvFrame
@@ -297,6 +392,7 @@ void CL_SplitSrvFrame( void ) {
 	}
 	SRV_Speed( local );
 	SRV_WeaponRespawn( local );
+	SRV_RespawnTime( local );
 }
 
 
@@ -436,7 +532,7 @@ void CL_SplitSrvRestartRound( void ) {
 void CL_SplitSrvReset( void ) {
 	static const char *natives[] = { "timelimit", "fraglimit", "capturelimit", "g_friendlyFire", "g_gravity", NULL };
 	cvar_t *ours[] = { srvInstagib, srvWeapons, srvSpawn, srvAmmo, srvBots, srvBotSkill, srvSelfDamage, srvGod, srvHealth,
-		srvQuad, srvSpeed, srvWeapRespawn, srvPowerups };
+		srvQuad, srvSpeed, srvWeapRespawn, srvPowerups, srvRespawnTime, srvWave };
 	int i;
 
 	for ( i = 0; i < (int)ARRAY_LEN( ours ); i++ ) {
@@ -729,6 +825,13 @@ void CL_SplitSrvInit( void ) {
 	srvWeapRespawn = Cvar_Get( "cl_splitSrvWeaponRespawn", "0", CVAR_ARCHIVE_ND );
 	Cvar_CheckRange( srvWeapRespawn, "0", "30", CV_INTEGER );
 	Cvar_SetDescription( srvWeapRespawn, "Server options: weapon pickups respawn after 1..30 s (g_weaponrespawn); 0 = the game's default." );
+	srvRespawnTime = Cvar_Get( "cl_splitSrvRespawnTime", "3", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( srvRespawnTime, "0", "15", CV_INTEGER );
+	Cvar_SetDescription( srvRespawnTime, "Server options: seconds before a dead player respawns, 1..15 (Urban Terror: g_respawndelay "
+		"and the team wave period g_redwave / g_bluewave; Quake 3: g_forcerespawn); 0 = the game's own." );
+	srvWave = Cvar_Get( "cl_splitSrvWaveRespawns", "0", CVAR_ARCHIVE_ND );	// off: Respawn time means what it says
+	Cvar_CheckRange( srvWave, "-1", "1", CV_INTEGER );
+	Cvar_SetDescription( srvWave, "Server options (Urban Terror): wave respawns, 1 on, 0 off (g_waverespawns, our default off so Respawn time is exact); -1 = the game's own." );
 	srvMap = Cvar_Get( "cl_splitSrvMap", "", CVAR_TEMP );
 	srvGametype = Cvar_Get( "cl_splitSrvGametype", "0", CVAR_TEMP );
 	srvModInsta = Cvar_Get( "cl_splitSrvModInstagib", "0", CVAR_TEMP );

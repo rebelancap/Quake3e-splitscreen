@@ -1010,6 +1010,17 @@ static void SR_Debug_f( void ) {
 	Com_Printf( "srvdebug ps: layout %i, instagib %i, weapons %i, no-quad %i, no-powerups %i, spawn %i, ammo %i, selfdamage-off %i, god %i, bots %i/%i, cheats %i\n",
 		sr.layout, sr.instagib, sr.weapons, sr.noQuad, sr.noPowerups, sr.spawnMode, sr.infiniteAmmo, sr.selfDamageOff, sr.godMask, sr.bots, sr.botSkill,
 		Cvar_VariableIntegerValue( "sv_cheats" ) );
+	{
+		// R24: the game's respawn cvars (Respawn time / Wave respawns rows) and the server time
+		static const char *resp[] = { "g_respawndelay", "g_waverespawns", "g_redwave", "g_bluewave", "g_forcerespawn", NULL };
+		buf[0] = '\0';
+		for ( w = 0; resp[w]; w++ ) {
+			if ( Cvar_Flags( resp[w] ) != CVAR_NONEXISTENT ) {
+				Q_strcat( buf, sizeof( buf ), va( " %s %s", resp[w], Cvar_VariableString( resp[w] ) ) );
+			}
+		}
+		Com_Printf( "  time %i respawn:%s\n", sv.time, buf[0] ? buf : " (no such cvars)" );
+	}
 	for ( i = 0; i < sv.maxclients; i++ ) {
 		if ( svs.clients[i].state != CS_ACTIVE ) {
 			continue;

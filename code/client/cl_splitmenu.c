@@ -1441,15 +1441,17 @@ static const char *smSkillLabels[] = { "I can win", "Bring it on", "Hurt me plen
 static const char *smSelfLabels[] = { "On", "Off" };
 static const char *smGravValues[] = { "800", "600", "400", "200" };
 static const char *smGravLabels[] = { "Off", "Low (600)", "Medium (400)", "High (200)" };
+static const char *smWaveValues[] = { "0", "1", "-1" };
+static const char *smWaveLabels[] = { "Off", "On", "Default" };
 static const char *smGodValues[] = { "0", "all", "1", "2", "3", "4", "5", "6", "7", "8" };
 static const char *smGodLabels[] = { "Off", "All players", "Player 1", "Player 2", "Player 3", "Player 4",
 	"Player 5", "Player 6", "Player 7", "Player 8" };
 
 // number lists made once: time 0, 5..60; frags 0, 5..100; captures 0..20; bots 0..20; health 0, 95..5;
-// weapon respawn 0, 1..30 s; player speed 50..200 % (no zero entry)
-static char smNumText[7][32][16], smNumVal[7][32][8];
-static const char *smNumValues[7][32], *smNumLabels[7][32];
-static int smNumCount[7];
+// weapon respawn 0, 1..30 s; player speed 50..200 % (no zero entry); R24 respawn time 0, 1..15 s
+static char smNumText[8][32][16], smNumVal[8][32][8];
+static const char *smNumValues[8][32], *smNumLabels[8][32];
+static int smNumCount[8];
 
 static void SM_NumList( int list, int first, int step, int last, const char *zero, const char *unit ) {
 	int v, k = 0;
@@ -1512,7 +1514,7 @@ static void SM_BuildServer( int n ) {
 	const char *weap = Cvar_VariableString( "cl_splitSrvWeapons" );
 	const char *pending = CL_SplitSrvPending();
 	const char *set = CL_SplitSrvActiveSet();
-	qboolean speedOk, respawnOk, powerupsOff;
+	qboolean speedOk, respawnOk, powerupsOff, urtRespawn, deathOk, waveOk;
 	int i, w;
 	smRow_t *r;
 
@@ -1523,6 +1525,7 @@ static void SM_BuildServer( int n ) {
 	SM_NumList( 4, 95, -5, 5, "Default (own handicap)", "" );
 	SM_NumList( 5, 1, 1, 30, "Default", " s" );
 	SM_NumList( 6, 50, 10, 200, NULL, "%" );
+	SM_NumList( 7, 1, 1, 15, "Default", " s" );
 
 	SM_Title( set[0] ? va( "Server options - %s", set ) : "Server options" );
 
@@ -1630,6 +1633,21 @@ static void SM_BuildServer( int n ) {
 	r = SM_Help( SM_Choice( "Weapon respawn", "cl_splitSrvWeaponRespawn", smNumValues[5], smNumLabels[5], smNumCount[5] ),
 		respawnOk ? "Seconds until a taken weapon comes back. Now." : "Not available in this game." );
 	r->disabled = !respawnOk;
+	// R24: Respawn time [native], live: UrT g_respawndelay + the team wave period g_redwave /
+	// g_bluewave (wave respawns ignore g_respawndelay); a game without g_respawndelay (baseq3,
+	// missionpack, OSP) g_forcerespawn: respawn without pressing fire.  Wave respawns: UrT
+	// g_waverespawns; greyed where the running game has no such cvar
+	urtRespawn = ( local ? Cvar_Flags( "g_respawndelay" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	deathOk = ( !local || urtRespawn || Cvar_Flags( "g_forcerespawn" ) != CVAR_NONEXISTENT ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Respawn time", "cl_splitSrvRespawnTime", smNumValues[7], smNumLabels[7], smNumCount[7] ),
+		!deathOk ? "Not available in this game." : urtRespawn ? "Wait before respawning. UrT: also sets the team wave period. Now."
+		: "Respawn by itself after this; fire respawns sooner. Now." );
+	r->disabled = !deathOk;
+	r->helpWrap = qtrue;	// the UrT note must stay readable in a small cell
+	waveOk = ( local ? Cvar_Flags( "g_waverespawns" ) != CVAR_NONEXISTENT : urt ) ? qtrue : qfalse;
+	r = SM_Help( SM_Choice( "Wave respawns", "cl_splitSrvWaveRespawns", smWaveValues, smWaveLabels, ARRAY_LEN( smWaveValues ) ),
+		waveOk ? "Team games: a team respawns together (waits up to Respawn time more). Now." : "Not available in this game (UrT only)." );
+	r->disabled = !waveOk;
 	SM_Help( SM_Slider( "Game volume", "s_volume", 0, 1.5f, 0.1f, "%.0f%%", 100 ), "Master volume of this game window. Now." );
 	SM_Help( SM_Action( "Reset to defaults", SM_SrvReset, 0 ), "Every option back to default; the map stays." );
 	SM_Help( SM_Sub( "Select server settings", &smSrvSets ), "Load a saved set of these options." );
