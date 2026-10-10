@@ -605,6 +605,36 @@ defaults; the first save rewrites a damaged file clean):
 
 ## Last round
 
+**R24 (Windows, 2026-10-09; Opus executor + lead; VERSION 1.0.0.2; commit
+`95fb54e6` on `main`; installed in the maintainer's game folder).**
+(1) **The maintainer's "1.0.0.1 still broken" report was a stale exe:** he
+plays the copy in `<Quake3 folder>\quake3e-vulkan-ss.x64.exe`, and his
+`games.log` showed `version ... splitscreen-1.0.0 ... Oct 7`; the lead
+installed 1.0.0.1, then 1.0.0.2 there (old copies in
+`work/installed-backup/`, `BUILD-INFO.txt` beside the exe). His new
+symptoms (P2/P3 slowly float up, animations at low fps, movement "like
+ice", TS only) fit the R23 cgame-clock detachment; the retest on 1.0.0.2 is
+pending (Next steps 0a). (2) **Server options: Respawn time** (Default /
+1-15 s, our default 3 s, live): UrT `g_respawndelay` + the wave period
+`g_redwave`/`g_bluewave` (UrT ignores the delay while waves are on); games
+without `g_respawndelay` (baseq3, missionpack, OSP) `g_forcerespawn`
+(respawn by itself after N; fire respawns sooner, 1.7 s); greyed without
+either. **Wave respawns** (Off / On / Default, UrT `g_waverespawns`;
+greyed elsewhere), **Off by default** in local games (lead's decision, so 3 s
+is exactly 3 s; the executor measured 4.2-5.2 s with waves on at period 3,
+3.0 s with waves off, 17.6 s with his server's old values 8 s delay +
+15 s waves; baseq3 default 21.6 s -> 4.6 s at 3). Both in sets and Reset;
+`srvdebug ps` prints the respawn cvars. Measured in `work/r24-urt.log`,
+`r24-urtpage.log`, `r24-q3.log`, pages `r24-page.jpg`, `r24-page-wave.jpg`,
+`r24-q3-page.jpg`; tests `scripts/tests/r24-*.cfg`. The lead's last tweak
+(Wave default Off, choice order Off/On/Default, help text) is compile-only
+verified. Candidate rows the executor saw (not built): UrT `g_roundtime` /
+`g_maxrounds` (next round), `g_gear` (next spawn), `g_stamina`,
+`g_walljumps`, `g_suddendeath`, `g_swaproles`, `g_respawnProtection`,
+`g_teamForceBalance` / `g_autobalance`, `g_warmup` (restart); baseq3
+`g_doWarmup` (restart), `dmflags` 8 no falling damage / 32 no footsteps,
+`g_knockback`, `g_quadfactor`, `g_teamForceBalance` (all live).
+
 **R23 (Windows, 2026-10-09; Opus executor; VERSION 1.0.0.1; commit
 `ebfbe91b` on `main`).** The maintainer clarified: the "floating" started
 **when the round began**, P1 on one team, P2/P3 on the other, and it was
@@ -1795,15 +1825,15 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0a. **R23 fix, the maintainer's check (1.0.0.1 in `build\Release`):**
-   - Same 3-player UrT Team Survivor session as before (P1 one team,
-     P2/P3 the other): after the round starts, and after a `map_restart`
-     / new map, P2 and P3 stay on the ground and track the server (no
-     "walking on top of the map"). Also one FFA sanity pass.
-   - Optional: a remote or LAN UrT server with P2/P3 joining late; if
-     P2/P3 detach there too, report it (the hook is local-server only;
-     the next step would be applying it to any UrT server, trading UrT's
-     25 ms interpolation buffer for correctness).
+0a. **The maintainer's check of 1.0.0.2** (installed in his game folder;
+   confirm `BUILD-INFO.txt` there says 1.0.0.2, or the console's version):
+   - 3-player UrT Team Survivor, P1 one team, P2/P3 the other: after the
+     round starts P2/P3 stay on the ground, track the server, animations
+     and movement normal (R23 fix). If not: `srvdebug ps` in the console
+     while it happens, send the log.
+   - UrT TDM: dead players come back in ~3 s (Respawn time 3, Wave
+     respawns Off); the Server options rows show below Weapon respawn.
+   - Pick further server-option rows from the R24 candidate list.
 0. **Linux / Steam Deck (M6) kicked off 2026-10-06 on the Linux test box** (GPD
    Win Mini 2025, Bazzite 43). The repo with full history is at
    `~/dev/Quake3e-splitscreen` there (branch `splitscreen` checked out,
@@ -2474,6 +2504,10 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Open questions
 
+- **R24 (2026-10-09):** Wave respawns default Off in local games and
+  Respawn time 3 s also in baseq3 (`g_forcerespawn` 20 -> 3: an idle dead
+  player returns after ~4.7 s). Default: keep both. Which further
+  server-option rows to add (list in Last round). Default: none until asked.
 - **R23 (2026-10-09):** should the `ut_timenudge` neutralisation also
   apply on remote/LAN UrT servers (a late-joining extra player could lock
   the same way on a low-jitter LAN)? Default: local server only, until a
@@ -2737,11 +2771,11 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R23 (2026-10-09):** none live. No game process running; tests ran in
-  `work/urttest` (now holding copies of the maintainer's UrT configs and
-  profiles, test copies only); the UrT install (his real home) and
-  `work/urthome` only read, install SHA-256 checked before/after. Clean
-  tree, `main` = `ebfbe91b` + this STATUS commit; no branches left.
+- **R24 (2026-10-09):** none live. No game process running; tests in
+  `work/urttest` / `work/q3test`; installs only read, except the maintainer's
+  `<Quake3 folder>`: our exe + `BUILD-INFO.txt` replaced there (1.0.0.2;
+  his 1.0.0 and 1.0.0.1 copies in `work/installed-backup/`). Clean tree,
+  `main` = `95fb54e6` + this STATUS commit, no branches left.
 - **R21 (2026-10-07):** none live. No game/server/HTTP process running
   (`tasklist` before every launch; every client run quit by its cfg or was
   killed by the runner's `timeout 100`; the dedicated server and
