@@ -605,6 +605,32 @@ defaults; the first save rewrites a damaged file clean):
 
 ## Last round
 
+**R25 (Windows, 2026-10-09; Opus executor; VERSION 1.0.0.3; commit
+`2e2b55eb` on `main`; installed in the maintainer's game folder, 1.0.0.2
+copy in `work/installed-backup/`).** Six Server options rows after Wave
+respawns (R24 pattern: archived `cl_splitSrv*`, held each frame in local
+games, Default = the game's own, in sets and Reset, greyed where the game
+lacks the cvar, `srvdebug ps` `rounds:` line): **Round time** (Default,
+1-10 min by 0.5; UrT `g_roundtime`; next round: a 1 -> 0.5 change left the
+running round at 60 s, the next lasted 30 s; UrT resets < 1 to 3 at map
+start, so the page starts at 1), **Max rounds** (Default / Unlimited /
+1-30; `g_maxrounds`; now; 2 draws -> "Roundlimit hit"), **Sudden death**
+(Off/On/Default; `g_suddendeath`; now; 2 draws at Max rounds 2 -> a 3rd
+round), **Swap roles** (Off/On/Default; `g_swaproles`, latched = replay the
+map with teams swapped; restart on leaving), **Spawn protection** (Default /
+Off / 1-10 s; `g_respawnprotection`; now; only shown reaching the server),
+**Warmup** (Default / Off / 5-30 s by 5; UrT `g_warmup`; baseq3-style games
+`g_doWarmup` + `g_warmup`; restart on leaving: UrT 5 -> a countdown, Off ->
+round at once; baseq3 Default 20 s countdown, 5 s countdown then the game's
+own restart). Page scrolls with the selection. Evidence `work/r25-round*`,
+`r25-sudden*`, `r25-warmup*`, `r25-q3*` logs, pages `r25-page.jpg`,
+`r25-page-warmup.jpg`, `r25-q3-page.jpg`, `r25-q3-page-pending.jpg`; tests
+`scripts/tests/r25-*.cfg` (headers note: round cfgs use 0.5 min from the
+console; `r25-q3.cfg` has no `quit`, the game's own warmup `map_restart`
+waits behind a pending script line). Harness: a late `vstr` in a long UrT
+cfg is dropped (command buffer overflow), write presses as `padinject`
+lines.
+
 **R24 (Windows, 2026-10-09; Opus executor + lead; VERSION 1.0.0.2; commit
 `95fb54e6` on `main`; installed in the maintainer's game folder).**
 (1) **The maintainer's "1.0.0.1 still broken" report was a stale exe:** he
@@ -1825,15 +1851,21 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0a. **The maintainer's check of 1.0.0.2** (installed in his game folder;
-   confirm `BUILD-INFO.txt` there says 1.0.0.2, or the console's version):
+0a. **The maintainer's check of 1.0.0.3** (installed in his game folder;
+   `BUILD-INFO.txt` there says 1.0.0.3):
    - 3-player UrT Team Survivor, P1 one team, P2/P3 the other: after the
      round starts P2/P3 stay on the ground, track the server, animations
-     and movement normal (R23 fix). If not: `srvdebug ps` in the console
+     and movement normal (R23 fix, still unconfirmed by him: his earlier
+     retest ran the old 1.0.0 exe). If not: `srvdebug ps` in the console
      while it happens, send the log.
    - UrT TDM: dead players come back in ~3 s (Respawn time 3, Wave
-     respawns Off); the Server options rows show below Weapon respawn.
-   - Pick further server-option rows from the R24 candidate list.
+     respawns Off).
+   - UrT TS: set Round time, Max rounds, Sudden death on the page, play two
+     rounds; Warmup 10 s + Swap roles On, leave the page: countdown, team
+     swap at match end. Spawn protection: a fresh spawn survives shots for
+     N s (never tested with damage).
+   - baseq3: the five UrT-only rows grey; Warmup 5 s restarts with a
+     countdown.
 0. **Linux / Steam Deck (M6) kicked off 2026-10-06 on the Linux test box** (GPD
    Win Mini 2025, Bazzite 43). The repo with full history is at
    `~/dev/Quake3e-splitscreen` there (branch `splitscreen` checked out,
@@ -2771,11 +2803,11 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R24 (2026-10-09):** none live. No game process running; tests in
+- **R25 (2026-10-09):** none live. No game process running; tests in
   `work/urttest` / `work/q3test`; installs only read, except the maintainer's
-  `<Quake3 folder>`: our exe + `BUILD-INFO.txt` replaced there (1.0.0.2;
-  his 1.0.0 and 1.0.0.1 copies in `work/installed-backup/`). Clean tree,
-  `main` = `95fb54e6` + this STATUS commit, no branches left.
+  `<Quake3 folder>`: our exe + `BUILD-INFO.txt` replaced there (1.0.0.3;
+  his 1.0.0 / 1.0.0.1 / 1.0.0.2 copies in `work/installed-backup/`). Clean
+  tree, `main` = `2e2b55eb` + this STATUS commit, no branches left.
 - **R21 (2026-10-07):** none live. No game/server/HTTP process running
   (`tasklist` before every launch; every client run quit by its cfg or was
   killed by the runner's `timeout 100`; the dedicated server and
