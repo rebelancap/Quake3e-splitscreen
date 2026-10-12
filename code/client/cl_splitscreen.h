@@ -104,6 +104,12 @@ typedef struct clientContext_s {
 	int					cgameWidth;		// screen size the running cgame was told
 	int					cgameHeight;	// (0 = it never asked for the glconfig)
 
+	// R26: its cgame's main world view field of view (pad look zoom scale, CL_SplitZoomFactor)
+	float				viewFov;		// fov_x of its latest main world scene, as the cgame passed it
+	float				viewFovBase;	// the widest since the baseline reset (= its unzoomed view)
+	float				viewFovSetting;	// its cg_fov value when the baseline was taken
+	int					viewFovTime;	// cls.realtime of that scene (0 = none yet)
+
 	// players > 0 only: this player's own menu (a ui VM instance, design 13.3)
 	vm_t				*uiVM;			// created on the first open, kept until the level ends
 	int					uiCatcher;		// KEYCATCH_UI while its menu is open
@@ -161,6 +167,7 @@ qboolean CL_SplitRefusalShowing( void );	// a remote server's "could not join" n
 void	CL_SplitViewRect( int ctxNum, viewRect_t *rect );
 void	CL_SplitGlconfig( glconfig_t *glconfig );
 void	CL_SplitRenderScene( const refdef_t *fd );
+float	CL_SplitZoomFactor( void );
 void	CL_SplitDrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, qhandle_t hShader );
 void	CL_SplitCGameRendering( stereoFrame_t stereo );
 qboolean CL_SplitSyscall( intptr_t *args, intptr_t *ret );

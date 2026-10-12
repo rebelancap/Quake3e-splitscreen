@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0.4 (dev)
+
+- Gamepad look now slows with the actual zoom: every zoom level (Urban Terror's
+  scope steps, Quake 3's +zoom) gets slower in proportion to the magnification,
+  and full speed returns as soon as the zoom ends (reset, respawn, weapon change).
+- Controls: **Zoom sensitivity** (25-200 %, default 100 %) replaces "Look speed
+  zoomed": how much the look speed drops when zoomed; 100 % = proportional to the
+  zoom, 200 % slows twice as hard. Old profiles' setting is carried over.
+
 ## 1.0.0.3 (dev)
 
 - Server options, Urban Terror round games (Team Survivor, Bomb, ...): new rows

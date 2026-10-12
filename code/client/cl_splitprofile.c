@@ -533,7 +533,7 @@ static qboolean Prof_FeelLine( int n, const char *word, const char *rest ) {
 		CL_ProfileSanitize( value, profLoadName, sizeof( profLoadName ) );
 		return qtrue;
 	}
-	if ( IN_PadFeelCvar( n, word ) ) {
+	if ( IN_PadFeelCvar( n, word ) || !Q_stricmp( word, "joy_zoomScale" ) ) {	// R26: + the pre-R26 zoom line
 		return IN_PadFeelSet( n, word, value );
 	}
 	return qfalse;	// unknown

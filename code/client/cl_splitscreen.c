@@ -653,6 +653,63 @@ void CL_SplitGlconfig( glconfig_t *glconfig ) {
 
 /*
 ==================
+CL_SplitNoteFov / CL_SplitZoomFactor
+
+R26: the pad look speed follows the zoom (in_gamepad.c CL_GamepadMove).
+Every world scene of a cgame whose viewport is at least half its screen
+(the main view, not a HUD model or a picture-in-picture) records the fov_x
+the cgame passed -- before the cell widening below, so a Together cell
+compares like a full screen.  The baseline (unzoomed) fov is the widest seen
+since the baseline was last reset: at the first scene, after a gap of 1 s
+without one (cgame start, level load, menu), and when the player's cg_fov
+changes (Field of view row).  A zoom therefore can never raise it; the
+worst case of a transient wide fov is a slightly slow look until the next
+reset, and a stale or missing view means no zoom (factor 1).
+==================
+*/
+static void CL_SplitNoteFov( const refdef_t *fd ) {
+	clientContext_t *c = cla;
+	float setting;
+
+	if ( ( fd->rdflags & RDF_NOWORLDMODEL ) || fd->fov_x <= 0.0f || fd->fov_x >= 180.0f ) {
+		return;
+	}
+	if ( c->cgameWidth > 0 && c->cgameHeight > 0
+		&& ( fd->width * 2 < c->cgameWidth || fd->height * 2 < c->cgameHeight ) ) {
+		return;	// not the main view
+	}
+	setting = Cvar_VariableValue( c->playerNum == 0 ? "cg_fov" : va( "p%i_cg_fov", c->playerNum + 1 ) );
+	if ( !c->viewFovTime || cls.realtime - c->viewFovTime > 1000 || cls.realtime < c->viewFovTime
+		|| setting != c->viewFovSetting ) {
+		c->viewFovBase = fd->fov_x;
+		c->viewFovSetting = setting;
+	} else if ( fd->fov_x > c->viewFovBase ) {
+		c->viewFovBase = fd->fov_x;
+	}
+	c->viewFov = fd->fov_x;
+	c->viewFovTime = cls.realtime;
+}
+
+
+// the active context's view magnification, tan(fov / 2) / tan(unzoomed fov / 2), 0.05 .. 1
+float CL_SplitZoomFactor( void ) {
+	const clientContext_t *c = cla;
+	float z;
+
+	if ( !c->viewFovTime || cls.realtime - c->viewFovTime > 500 || cls.realtime < c->viewFovTime
+		|| c->viewFov <= 0.0f || c->viewFovBase <= 0.0f ) {
+		return 1.0f;
+	}
+	z = tanf( DEG2RAD( c->viewFov * 0.5f ) ) / tanf( DEG2RAD( c->viewFovBase * 0.5f ) );
+	if ( z > 0.95f ) {
+		return 1.0f;	// wobble (baseq3 under water: +-1 deg), not a zoom
+	}
+	return Com_Clamp( 0.05f, 1.0f, z );
+}
+
+
+/*
+==================
 CL_SplitRenderScene
 
 CG_R_RENDERSCENE: refdef x/y/width/height are in the cgame's screen
@@ -665,6 +722,8 @@ void CL_SplitRenderScene( const refdef_t *fd ) {
 	viewRect_t r;
 	int sw, sh, x0, y0, x1, y1;
 	float sx, sy, ox, oy, scale;
+
+	CL_SplitNoteFov( fd );	// R26: pad look zoom scale
 
 	if ( !CL_SplitCells() ) {
 		re.RenderScene( fd );

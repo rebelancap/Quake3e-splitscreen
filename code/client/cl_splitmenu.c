@@ -1188,7 +1188,9 @@ static void SM_BuildControls( int n ) {
 	r->disabled = Q_stricmp( Cvar_VariableString( SM_Feel( n, "joy_aimCurve" ) ), "custom" ) ? qtrue : qfalse;
 	SM_FeelRow( SM_Slider( "Turn boost (full stick)", SM_Feel( n, "joy_turnBoost" ), 1, 3, 0.1f, "%.1fx", 1 ) );
 	SM_FeelRow( SM_Slider( "Turn boost ramp", SM_Feel( n, "joy_turnBoostTime" ), 0, 1000, 50, "%.0f ms", 1 ) );
-	SM_FeelRow( SM_Slider( "Look speed zoomed", SM_Feel( n, "joy_zoomScale" ), 0.1f, 1, 0.05f, "%.0f%%", 100 ) );
+	r = SM_Help( SM_FeelRow( SM_Slider( "Zoom sensitivity", SM_Feel( n, "joy_zoomSens" ), 0.25f, 2, 0.05f, "%.0f%%", 100 ) ),
+		"How much the look speed drops when zoomed. 100% = proportional to the zoom." );
+	r->helpWrap = qtrue;	// R26
 	SM_FeelRow( SM_Choice( "Aim smoothing", SM_Feel( n, "joy_aimSmooth" ), sm01, smOffOn, 2 ) );
 	// aim assist (design 15): a player's row is greyed on another machine's server
 	// or when the host forbids it; the Guest defaults stay editable

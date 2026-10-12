@@ -1397,9 +1397,43 @@ Per player/profile, with presets so nobody has to tune five numbers:
   on release — the Call of Duty-style "extra yaw".
 - Radial inner deadzone with rescale (no jump at the edge), axial
   snap off, outer deadzone.
-- Zoom/ADS multiplier (`joy_zoomScale`, default ~0.5) applied while the
-  player's zoom button is held (and, where detectable, when the mod
-  reports a reduced fov).
+- **Zoom sensitivity** (R26, 1.0.0.4; replaces R7's flat `joy_zoomScale`
+  multiplier, "Look speed zoomed"): the look slows with the view's actual
+  magnification, so every zoom level of a scoped weapon gets its own speed.
+  - z = tan(fov / 2) / tan(unzoomed fov / 2), clamped to 0.05 .. 1 (true
+    angular magnification; above 0.95 counts as 1: baseq3's +-1 deg
+    under-water wobble).
+  - Look speed while zoomed = normal speed x z ^ e, e = `joy_zoomSens`
+    (per player, Controls row **Zoom sensitivity** 25 .. 200 %, default
+    100 %; help line "How much the look speed drops when zoomed. 100 % =
+    proportional to the zoom."). 100 % (e = 1) is a mouse with
+    `cg_zoomSensitivity 1`; 200 % slows twice as hard (z squared); 25 %
+    barely slows (z ^ 0.25).
+  - fov source (`cl_splitscreen.c` `CL_SplitNoteFov`, from
+    `CL_SplitRenderScene` for every cgame): each world scene (no
+    `RDF_NOWORLDMODEL`) at least half the cgame's told screen records the
+    `fov_x` the cgame passed, before the engine widens fov_x for a wide
+    Together / tile cell -- the cgame computes zoomed and unzoomed fov the
+    same way for its told 640x480 screen, so the ratio is the same in a
+    cell as full screen. The unzoomed fov is the widest seen since the
+    baseline was reset: the first scene, after 1 s without one (cgame
+    start, level load, menu), and when the player's `cg_fov` /
+    `p<N>_cg_fov` changes (Field of view row). A zoom can never raise it;
+    respawn / weapon change / zoom reset bring the fov back to it (full
+    speed the next frame). No scene for 0.5 s: z = 1.
+  - Not applied on top: the cgame's sensitivity scale
+    (`CG_SET_USER_CMD_VALUE`, `cl.cgameSensitivity`) stays the mouse's
+    (`CL_MouseMove`). Measured: Urban Terror 4.3 does report one (SR-8:
+    0.226 / 0.084 / 0.028 at fov 24 / 9 / 3; zoom 3's 0.028 is below
+    our 0.05 clamp), baseq3 reports 0.211 with `+zoom` (cg_zoomFov 22.5
+    at cg_fov 90; z = 0.199). Keyboard/mouse player 1 is unchanged.
+  - Profiles: a pre-R26 profile's `joy_zoomScale` line loads as
+    `joy_zoomSens` = 0.5 / old (the old default 0.5 -> 100 %, 0.25 ->
+    200 %, 1 -> 50 %); saved again as `joy_zoomSens`.
+  - `in_padDebug 2`'s `P<n> aim:` line shows `zoom <factor> (fov <cur>/<unzoomed>
+    z <z> sens <e>, cgame scale <cl.cgameSensitivity>)`. Tests:
+    `scripts/tests/r26-zoom-urt*.cfg`, `r26-zoom-q3.cfg` (also a 2-player Together
+    cell), `r26-oldprof.cfg` (profile migration).
 - Light smoothing (1–2 frame) optional, off by default.
 - No aim assist in the aim-feel layer itself; the separate, local-games-only
   assist is section 15 (as built R12: hooked into `CL_GamepadMove` after

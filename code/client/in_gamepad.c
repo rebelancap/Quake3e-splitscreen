@@ -148,7 +148,7 @@ static cvar_t	*joy_aimCurve;
 static cvar_t	*joy_aimExponent;
 static cvar_t	*joy_turnBoost;
 static cvar_t	*joy_turnBoostTime;
-static cvar_t	*joy_zoomScale;
+static cvar_t	*joy_zoomSens;		// R26: how hard the look slows with the zoom (exponent; was joy_zoomScale)
 static cvar_t	*joy_aimSmooth;
 static cvar_t	*joy_crouchToggle;
 static cvar_t	*joy_sprintToggle;	// R18
@@ -167,7 +167,7 @@ static cvar_t	*cl_padModCursorScale;	// R14a: mod-menu cursor vs cl_padCursorSpe
 // p<N>_<name> shadow, created from the shared value (the guest default)
 static cvar_t **const padFeelCvars[] = {
 	&joy_yawSpeed, &joy_pitchSpeed, &joy_invertPitch, &joy_aimCurve, &joy_aimExponent,
-	&joy_turnBoost, &joy_turnBoostTime, &joy_zoomScale, &joy_aimSmooth,
+	&joy_turnBoost, &joy_turnBoostTime, &joy_zoomSens, &joy_aimSmooth,
 	&joy_deadzone, &joy_deadzoneOuter, &joy_walkThreshold, &joy_alwaysRun, &joy_aimAssist,
 	&joy_fov, &joy_cursorSpeed
 };
@@ -175,7 +175,7 @@ static cvar_t **const padFeelCvars[] = {
 // valid range of each (profile files are checked against it; aim curve is a word)
 static const float padFeelRange[][2] = {
 	{ 10, 1000 }, { 10, 1000 }, { 0, 1 }, { 0, 0 }, { 0.5f, 4 },
-	{ 1, 3 }, { 0, 2000 }, { 0.1f, 1 }, { 0, 1 },
+	{ 1, 3 }, { 0, 2000 }, { 0.25f, 2 }, { 0, 1 },
 	{ 0, 0.9f }, { 0.1f, 1 }, { 0, 1 }, { 0, 1 }, { 0, 2 },
 	{ 80, 130 }, { 0.5f, 2 }
 };
@@ -1838,6 +1838,18 @@ qboolean IN_PadFeelSet( int n, const char *name, const char *value ) {
 	float f;
 	int k, i;
 
+	if ( name && value && !Q_stricmp( name, "joy_zoomScale" ) ) {
+		// R26: a pre-R26 profile's "Look speed zoomed" multiplier (0.1 .. 1, default 0.5) -> Zoom
+		// sensitivity: the old default 0.5 is 100 %, a smaller multiplier slows harder (0.25 -> 200 %),
+		// 1 -> 50 %
+		v = IN_PadFeelCvar( n, "joy_zoomSens" );
+		f = atof( value );
+		if ( !v || !value[0] || !Q_isanumber( value ) || f < 0.1f || f > 1.0f ) {
+			return qfalse;
+		}
+		Cvar_Set( v->name, va( "%.2f", Com_Clamp( 0.25f, 2.0f, 0.5f / f ) ) );
+		return qtrue;
+	}
 	if ( !v || !value ) {
 		return qfalse;
 	}
@@ -2966,20 +2978,6 @@ static float Pad_AimCurve( int n, float m ) {
 }
 
 
-// the player holds a pad button bound to +zoom
-static qboolean Pad_ZoomHeld( const padDevice_t *pad ) {
-	const padSlot_t *s = &padSlots[ pad->player ];
-	int k;
-
-	for ( k = 0; k < PAD_KEY_COUNT; k++ ) {
-		if ( pad->sentDown[k] && s->binds[k] && !Q_stricmpn( s->binds[k], "+zoom", 5 ) ) {
-			return qtrue;
-		}
-	}
-	return qfalse;
-}
-
-
 // per-player aim state
 typedef struct {
 	float	boostMs;			// time the look stick has been near full deflection
@@ -3007,8 +3005,8 @@ void CL_GamepadMove( usercmd_t *cmd ) {
 	const int n = cla->playerNum;
 	padDevice_t *pad;
 	padAim_t *aim;
-	float inner, outer, m, dx, dy, c, dt, ms, boost, zoom, boostTime, yawRate, pitchRate, scale;
-	qboolean run, zoomed, moveInput;
+	float inner, outer, m, dx, dy, c, dt, ms, boost, zoom, zf, boostTime, yawRate, pitchRate, scale;
+	qboolean run, moveInput;
 
 	if ( !padInitialized || (unsigned)n >= MAX_SPLITVIEW ) {
 		return;
@@ -3059,6 +3057,15 @@ void CL_GamepadMove( usercmd_t *cmd ) {
 	yawRate = pitchRate = 0.0f;
 	boost = zoom = 1.0f;
 	c = 0.0f;
+	// R26: zoomed, the look slows with the view's magnification zf (the rendered fov against the
+	// unzoomed one, cl_splitscreen.c CL_SplitZoomFactor): speed x zf ^ joy_zoomSens.  1 = in
+	// proportion to the zoom (a mouse with cg_zoomSensitivity 1), 2 = twice as hard, 0.25 = barely.
+	// Covers baseq3's +zoom and Urban Terror's zoom steps alike; the cgame's sensitivity scale
+	// (cl.cgameSensitivity) stays the mouse's (CL_MouseMove) and is not applied on top.
+	zf = CL_SplitZoomFactor();
+	if ( zf < 1.0f ) {
+		zoom = powf( zf, Com_Clamp( 0.25f, 2.0f, Pad_PlayerValue( n, joy_zoomSens ) ) );
+	}
 	if ( m > 0.0f ) {
 		c = Pad_AimCurve( n, m );
 
@@ -3069,12 +3076,6 @@ void CL_GamepadMove( usercmd_t *cmd ) {
 				* ( boostTime > 0.0f ? MIN( aim->boostMs / boostTime, 1.0f ) : 1.0f );
 		} else {
 			aim->boostMs = 0.0f;
-		}
-
-		// zoomed: the player holds +zoom, or the mod reports a reduced sensitivity
-		zoomed = Pad_ZoomHeld( pad ) || ( cl.cgameSensitivity > 0.0f && cl.cgameSensitivity < 0.99f );
-		if ( zoomed ) {
-			zoom = Pad_PlayerValue( n, joy_zoomScale );
 		}
 
 		yawRate = Pad_PlayerValue( n, joy_yawSpeed ) * c * dx * boost * zoom;
@@ -3110,8 +3111,9 @@ void CL_GamepadMove( usercmd_t *cmd ) {
 		aim->dbgYaw += yawRate * dt;
 		aim->dbgMs += ms;
 		if ( cls.realtime >= aim->dbgNext && aim->dbgMs > 0.0f ) {
-			Com_Printf( "P%i aim: stick %.2f,%.2f m %.3f curve %.3f boost %.2f zoom %.2f -> yaw %.1f pitch %.1f deg/s (measured yaw %.1f deg/s over %.0f ms)\n",
-				n + 1, pad->axis[PAX_RX], pad->axis[PAX_RY], m, c, boost, zoom, yawRate, pitchRate,
+			Com_Printf( "P%i aim: stick %.2f,%.2f m %.3f curve %.3f boost %.2f zoom %.3f (fov %.1f/%.1f z %.3f sens %.2f, cgame scale %.3f) -> yaw %.1f pitch %.1f deg/s (measured yaw %.1f deg/s over %.0f ms)\n",
+				n + 1, pad->axis[PAX_RX], pad->axis[PAX_RY], m, c, boost, zoom, cla->viewFov, cla->viewFovBase, zf,
+				Pad_PlayerValue( n, joy_zoomSens ), cl.cgameSensitivity, yawRate, pitchRate,
 				aim->dbgYaw * 1000.0f / aim->dbgMs, aim->dbgMs );
 			aim->dbgYaw = aim->dbgMs = 0.0f;
 			aim->dbgNext = cls.realtime + ( in_padDebug->integer >= 3 ? 0 : 500 );
@@ -4018,10 +4020,11 @@ void IN_GamepadInit( void ) {
 	joy_turnBoostTime = Cvar_Get( "joy_turnBoostTime", "250", CVAR_ARCHIVE_ND );
 	Cvar_CheckRange( joy_turnBoostTime, "0", "2000", CV_INTEGER );
 	Cvar_SetDescription( joy_turnBoostTime, "Gamepad look: milliseconds over which the turn boost ramps in." );
-	joy_zoomScale = Cvar_Get( "joy_zoomScale", "0.5", CVAR_ARCHIVE_ND );
-	Cvar_CheckRange( joy_zoomScale, "0.1", "1", CV_FLOAT );
-	Cvar_SetDescription( joy_zoomScale, "Gamepad look speed multiplier while zoomed (+zoom held, or the mod "
-		"reports a zoomed view)." );
+	joy_zoomSens = Cvar_Get( "joy_zoomSens", "1", CVAR_ARCHIVE_ND );
+	Cvar_CheckRange( joy_zoomSens, "0.25", "2", CV_FLOAT );
+	Cvar_SetDescription( joy_zoomSens, "Gamepad look: how much the look speed drops when zoomed (Controls: Zoom sensitivity, "
+		"0.25 .. 2 = 25 .. 200 %). Speed while zoomed = speed x z ^ joy_zoomSens, z = tan(zoomed fov / 2) / "
+		"tan(normal fov / 2): 1 = proportional to the zoom, 2 = slows twice as hard, 0.25 = barely. Per player: p<N>_joy_zoomSens." );
 	joy_aimSmooth = Cvar_Get( "joy_aimSmooth", "0", CVAR_ARCHIVE_ND );
 	Cvar_CheckRange( joy_aimSmooth, "0", "1", CV_INTEGER );
 	Cvar_SetDescription( joy_aimSmooth, "Gamepad look: average with the previous frame (light smoothing)." );
