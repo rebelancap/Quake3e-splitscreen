@@ -605,6 +605,66 @@ defaults; the first save rewrites a damaged file clean):
 
 ## Last round
 
+**R26 + R27 (Windows, 2026-10-12; two Opus executors in parallel + lead;
+VERSION 1.0.0.5; `main` = merge `6dd92ffd` + `cdc46b44`; installed in the
+maintainer's game folder, 1.0.0.3 copy in `work/installed-backup/`).**
+**The maintainer confirmed the R23 Team Survivor fix** ("the team survivor
+floating issue is fixed!", 2026-10-12, on 1.0.0.3).
+**R26 Zoom sensitivity** (commit `5e1dab8f`, lead's floor tweak `2e2b4b69`):
+UrT 4.3 does report a zoom sensitivity scale (SR-8 0.226 / 0.084 / 0.028 at
+fov 24 / 9 / 3; baseq3 `+zoom` 0.211), so the old pad code's flat
+`joy_zoomScale` 0.5 never followed the zoom levels. Now `CL_SplitNoteFov`
+(`cl_splitscreen.c`) records each context's main world-scene fov as the
+cgame passed it (before the Together-cell widening), the unzoomed fov is the
+widest seen since a reset (first scene, 1 s gap, `cg_fov` change);
+z = tan(fov/2) / tan(fov0/2), 0.02..1 (floor lowered from the executor's
+0.05 by the lead so UrT zoom 3, z 0.026, is followed; compile-only), values
+> 0.95 = 1; look speed = normal x z ^ `joy_zoomSens` (new per-player feel
+cvar, 0.25..2, default 1; Controls row **Zoom sensitivity** 25-200 %
+replaces "Look speed zoomed"; old profile `joy_zoomScale` v -> 0.5 / v); the
+pad no longer uses the cgame's scale (mouse path unchanged); no scene for
+0.5 s -> z 1 (worst failure = slightly too fast, never stuck slow).
+Measured UrT SR-8, stick 0.5, yaw deg/s: unzoomed 61.2; zoom 1 fov 24
+13.0 (200 % 2.8, 25 % 41.6); zoom 2 fov 9 4.8 (0.4 / 32.4); zoom 3 fov 3
+3.1 at the old floor; reset / die-while-zoomed 61.2; baseq3 `+zoom` fov
+22.5 12.2; Together 2P same ratio. Logs `work/r26-zoom-urt.log`,
+`r26-zoom-q3.log`, `r26-oldprof.log`, shots `r26-controls.jpg`,
+`r26-urt-zoom1.jpg`, `r26-q3-zoom.jpg`, `r26-q3-together-zoom.jpg`; tests
+`scripts/tests/r26-*.cfg`. Open: aim assist's own added rotation is not
+zoom-scaled.
+**R27 UrT Weapons row** (commit `61a93eba`): the row is live in UrT via
+`g_gear` (letters verified from `qagame.qvm`'s item list, 'A' + index then
+'a'..: pistols F G f g l, shotguns H j, SMGs I J h k, rifles K L M e a c,
+snipers N Z i, grenades O P Q, items R S T U V W X; knife E is not gear).
+Values: Default, "X only" for 20 weapons, Knives only, Pistols / Shotguns /
+SMGs / Rifles / Snipers only; "X only" forbids every other weapon letter
+plus all grenades, items stay. Because UrT only drops forbidden gear at
+spawn (a player who never chose X spawns with the knife only, r27-probe),
+each local player's gear userinfo is rewritten to X (pistol in the sidearm
+slot, else primary; a group keeps the player's own pick if in it; forbidden
+secondary emptied; sidearm never emptied, UrT rejects that) and resent
+300 ms after `g_gear` changes; held while the page is open (every change
+prints a chat line); greyed under instagib; help "UrT g_gear; the knife
+always stays. Next spawn after leaving." Random skipped (gear is per
+player). Measured: SR-8 only -> both spawn knife + SR-8; Knives only ->
+knife; every X / group -> knife + X; Default -> own gear; baseq3 Railguns
+only unchanged (9 `weapon_railgun`). Open: ground pickups of dropped
+weapons ignore `g_gear` (UrT behaviour); bots / remote players keep their
+gear. Logs `work/r27-urt.log`, `r27-live.log`, `r27-probe.log`,
+`r27-q3.log`, `r27-urt-games.log`, shots `r27-weapons.jpg`,
+`r27-q3-page.jpg`; tests `scripts/tests/r27-*.cfg`.
+**Lead's merge smoke run** (`work/r28-smoke.log`, r27-urt.cfg on the merged
+1.0.0.5 exe): boots UrT, page works, `g_gear` applied, both respawned; then
+the harness overflow below ended the script (killed by the lead's timeout).
+**Process notes:** the two executors' runs overlapped once (two game
+instances; both redid their runs behind a wait-for-empty-`tasklist` wrapper
+with overlap polling); one executor moved into a git worktree
+(`work/wt-urt-gear`, removed after the merge). **Harness bug seen by every
+UrT round since R22:** UrT's cgame queues `-button13;-button14;` every frame
+into the shared command buffer, so a test cfg `wait` longer than ~1 min (or
+a long cfg) overflows it ("Cbuf_NestedAdd overflowed") and the script's
+tail is lost; keep waits short, one setting per run.
+
 **R25 (Windows, 2026-10-09; Opus executor; VERSION 1.0.0.3; commit
 `2e2b55eb` on `main`; installed in the maintainer's game folder, 1.0.0.2
 copy in `work/installed-backup/`).** Six Server options rows after Wave
@@ -1851,21 +1911,23 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0a. **The maintainer's check of 1.0.0.3** (installed in his game folder;
-   `BUILD-INFO.txt` there says 1.0.0.3):
-   - 3-player UrT Team Survivor, P1 one team, P2/P3 the other: after the
-     round starts P2/P3 stay on the ground, track the server, animations
-     and movement normal (R23 fix, still unconfirmed by him: his earlier
-     retest ran the old 1.0.0 exe). If not: `srvdebug ps` in the console
-     while it happens, send the log.
-   - UrT TDM: dead players come back in ~3 s (Respawn time 3, Wave
-     respawns Off).
-   - UrT TS: set Round time, Max rounds, Sudden death on the page, play two
-     rounds; Warmup 10 s + Swap roles On, leave the page: countdown, team
-     swap at match end. Spawn protection: a fresh spawn survives shots for
-     N s (never tested with damage).
-   - baseq3: the five UrT-only rows grey; Warmup 5 s restarts with a
-     countdown.
+0a. **The maintainer's check of 1.0.0.5** (installed in his game folder;
+   `BUILD-INFO.txt` there says 1.0.0.5):
+   - UrT, sniper rifle: step LT through the zoom levels, each step looks
+     slower in proportion; LB reset -> full speed; Controls -> Zoom
+     sensitivity 200 % (much slower) and 25 % (barely slows); the carried-over
+     profile value shows 100 %.
+   - UrT FFA, Server options -> Weapons -> SR-8 only, leave the page, die:
+     respawn with knife + SR-8; Knives only; a group (Pistols only); Default.
+   - UrT TDM/TS: Respawn time 3 (~3 s), Round time / Max rounds / Sudden
+     death / Warmup / Swap roles as in the R25 checklist; Spawn protection
+     (a fresh spawn survives shots for N s, never tested with damage).
+   - baseq3: `+zoom` on the pad slows the look; Weapons row unchanged.
+0b. **Harness fix (small engine round):** stop UrT's per-frame
+   `-button13;-button14;` cgame commands from overflowing the command
+   buffer during script `wait`s (e.g. run cgame-queued commands through a
+   separate buffer, or drop duplicate `-buttonN` lines while a `wait` is
+   pending); then long UrT test cfgs work again. Test-only.
 0. **Linux / Steam Deck (M6) kicked off 2026-10-06 on the Linux test box** (GPD
    Win Mini 2025, Bazzite 43). The repo with full history is at
    `~/dev/Quake3e-splitscreen` there (branch `splitscreen` checked out,
@@ -2536,6 +2598,10 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Open questions
 
+- **R26/R27 (2026-10-12):** zoom floor 0.02 (UrT zoom 3 followed exactly;
+  default keep); aim assist's own rotation not zoom-scaled (default: leave
+  until noticed); UrT Weapons row leaves bots/remote players' gear alone and
+  cannot stop ground pickups (default: document, no change).
 - **R24 (2026-10-09):** Wave respawns default Off in local games and
   Respawn time 3 s also in baseq3 (`g_forcerespawn` 20 -> 3: an idle dead
   player returns after ~4.7 s). Default: keep both. Which further
@@ -2803,11 +2869,13 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R25 (2026-10-09):** none live. No game process running; tests in
-  `work/urttest` / `work/q3test`; installs only read, except the maintainer's
-  `<Quake3 folder>`: our exe + `BUILD-INFO.txt` replaced there (1.0.0.3;
-  his 1.0.0 / 1.0.0.1 / 1.0.0.2 copies in `work/installed-backup/`). Clean
-  tree, `main` = `2e2b55eb` + this STATUS commit, no branches left.
+- **R26/R27 (2026-10-12):** none live. The lead killed its own hung
+  smoke-run game process (pid 33484); no game process running. Tests in
+  `work/urttest` (restored from the run's backup tar) / `work/q3test`;
+  installs only read, except the maintainer's `<Quake3 folder>`: our exe +
+  `BUILD-INFO.txt` replaced there (1.0.0.5; his 1.0.0 .. 1.0.0.3 copies in
+  `work/installed-backup/`). Worktree `work/wt-urt-gear` removed. Clean
+  tree, `main` = `cdc46b44` + this STATUS commit, no branches left.
 - **R21 (2026-10-07):** none live. No game/server/HTTP process running
   (`tasklist` before every launch; every client run quit by its cfg or was
   killed by the runner's `timeout 100`; the dedicated server and
