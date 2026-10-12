@@ -1400,7 +1400,7 @@ Per player/profile, with presets so nobody has to tune five numbers:
 - **Zoom sensitivity** (R26, 1.0.0.4; replaces R7's flat `joy_zoomScale`
   multiplier, "Look speed zoomed"): the look slows with the view's actual
   magnification, so every zoom level of a scoped weapon gets its own speed.
-  - z = tan(fov / 2) / tan(unzoomed fov / 2), clamped to 0.05 .. 1 (true
+  - z = tan(fov / 2) / tan(unzoomed fov / 2), clamped to 0.02 .. 1 (true
     angular magnification; above 0.95 counts as 1: baseq3's +-1 deg
     under-water wobble).
   - Look speed while zoomed = normal speed x z ^ e, e = `joy_zoomSens`
@@ -1425,7 +1425,7 @@ Per player/profile, with presets so nobody has to tune five numbers:
     (`CG_SET_USER_CMD_VALUE`, `cl.cgameSensitivity`) stays the mouse's
     (`CL_MouseMove`). Measured: Urban Terror 4.3 does report one (SR-8:
     0.226 / 0.084 / 0.028 at fov 24 / 9 / 3; zoom 3's 0.028 is below
-    our 0.05 clamp), baseq3 reports 0.211 with `+zoom` (cg_zoomFov 22.5
+    the old 0.05 clamp; the floor is 0.02 since the lead's merge, so zoom 3 is followed), baseq3 reports 0.211 with `+zoom` (cg_zoomFov 22.5
     at cg_fov 90; z = 0.199). Keyboard/mouse player 1 is unchanged.
   - Profiles: a pre-R26 profile's `joy_zoomScale` line loads as
     `joy_zoomSens` = 0.5 / old (the old default 0.5 -> 100 %, 0.25 ->

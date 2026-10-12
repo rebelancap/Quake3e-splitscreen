@@ -704,7 +704,7 @@ float CL_SplitZoomFactor( void ) {
 	if ( z > 0.95f ) {
 		return 1.0f;	// wobble (baseq3 under water: +-1 deg), not a zoom
 	}
-	return Com_Clamp( 0.05f, 1.0f, z );
+	return Com_Clamp( 0.02f, 1.0f, z );
 }
 
 
