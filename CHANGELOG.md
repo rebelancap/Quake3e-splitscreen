@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0.5 (dev)
+
+- Server options, Urban Terror: the **Weapons** row now works (it was greyed):
+  Default, one weapon only (Beretta ... FR-F1, 20 weapons), Knives only, or
+  Pistols / Shotguns / SMGs / Rifles / Snipers only. Uses `g_gear`; local players
+  get that weapon, grenades are off, the knife always stays. From the next spawn.
 ## 1.0.0.4 (dev)
 
 - Gamepad look now slows with the actual zoom: every zoom level (Urban Terror's

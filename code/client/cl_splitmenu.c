@@ -1617,9 +1617,21 @@ static void SM_BuildServer( int n ) {
 	r = SM_Help( SM_Choice( "Instagib", instaCvar, sm01, smOffOn, 2 ),
 		modInsta[0] ? "Uses the game's own instagib. Restarts." : rules ? "Railguns, 1-hit kills, no pickups. Restarts." : "Not available in this game." );
 	r->disabled = !instaOk;
-	r = SM_Help( SM_Choice( "Weapons", "cl_splitSrvWeapons", smWeapValues, smWeapLabels, ARRAY_LEN( smWeapValues ) ),
-		rules ? ( instagib ? "Instagib is on." : "Weapons on the map. Random: new each restart." ) : "Not available in this game." );
-	r->disabled = !rules || instagib;
+	if ( urt ) {
+		// R27: UrT has no weapon pickups: its g_gear (allowed gear, next spawn); local players get the weapon
+		static const char *gearValues[32], *gearLabels[32];
+		const int gearCount = CL_SplitSrvGearChoices( gearValues, gearLabels, ARRAY_LEN( gearValues ) );
+		const qboolean gearOk = ( !local || Cvar_Flags( "g_gear" ) != CVAR_NONEXISTENT ) ? qtrue : qfalse;
+		r = SM_Help( SM_Choice( "Weapons", "cl_splitSrvGear", gearValues, gearLabels, gearCount ),
+			!gearOk ? "Not available in this game." : instagib ? "Instagib is on."
+			: "UrT g_gear; the knife always stays. Next spawn after leaving." );
+		r->disabled = !gearOk || instagib;
+		r->helpWrap = qtrue;
+	} else {
+		r = SM_Help( SM_Choice( "Weapons", "cl_splitSrvWeapons", smWeapValues, smWeapLabels, ARRAY_LEN( smWeapValues ) ),
+			rules ? ( instagib ? "Instagib is on." : "Weapons on the map. Random: new each restart." ) : "Not available in this game." );
+		r->disabled = !rules || instagib;
+	}
 
 	for ( w = 2; w < (int)ARRAY_LEN( smWeapValues ) && Q_stricmp( weap, smWeapValues[w] ); w++ )
 		;

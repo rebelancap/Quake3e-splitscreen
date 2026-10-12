@@ -1033,6 +1033,10 @@ static void SR_Debug_f( void ) {
 		}
 		Com_Printf( "  rounds:%s\n", buf[0] ? buf : " (no such cvars)" );
 	}
+	if ( Cvar_Flags( "g_gear" ) != CVAR_NONEXISTENT ) {
+		// R27: UrT's gear restrictions (the Weapons row in UrT): letters of the items not allowed
+		Com_Printf( "  gear: g_gear \"%s\"\n", Cvar_VariableString( "g_gear" ) );
+	}
 	for ( i = 0; i < sv.maxclients; i++ ) {
 		if ( svs.clients[i].state != CS_ACTIVE ) {
 			continue;
@@ -1052,6 +1056,17 @@ static void SR_Debug_f( void ) {
 			( sr.cl[i].godSpawn >= 0 && sr.cl[i].godSpawn == ps->persistant[ SR_PERS_SPAWN_COUNT ] ) ? "on" : "off",
 			ps->speed,
 			ps->origin[0], ps->origin[1], ps->origin[2] );
+		if ( sr.layout == SR_LAYOUT_NONE && Cvar_Flags( "g_gear" ) != CVAR_NONEXISTENT ) {
+			// R27, UrT: its weapon slots (playerState powerups[], weapon id in the low byte) and the
+			// player's gear userinfo
+			buf[0] = '\0';
+			for ( w = 0; w < MAX_POWERUPS; w++ ) {
+				if ( ps->powerups[w] ) {
+					Q_strcat( buf, sizeof( buf ), va( " %i:%i(0x%x)", w, ps->powerups[w] & 0xff, ps->powerups[w] ) );
+				}
+			}
+			Com_Printf( "    ut slots [%s ] gear userinfo \"%s\"\n", buf, Info_ValueForKey( svs.clients[i].userinfo, "gear" ) );
+		}
 	}
 }
 
