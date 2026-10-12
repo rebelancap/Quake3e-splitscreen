@@ -302,6 +302,7 @@ qboolean CL_SplitSrvUrT( void );
 qboolean CL_SplitSrvCTF( void );			// the pending game type is a capture game
 const char *CL_SplitSrvModInstagib( void );	// R16: the game's own instagib cvar, "" = none
 qboolean CL_SplitSrvInstagibOn( void );		// R16: instagib on in the running local game (preset or the game's)
+int		CL_SplitSrvGearChoices( const char **values, const char **labels, int max );	// R27: UrT Weapons row
 void	CL_SplitSrvOpen( void );			// the page opened: pending map / game type = current
 void	CL_SplitSrvLeave( void );			// the page left: apply, at most one restart
 const char *CL_SplitSrvPending( void );	// what leaving will do ("" = no restart)

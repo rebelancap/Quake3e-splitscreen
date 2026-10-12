@@ -36,7 +36,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //    Max rounds / Sudden death / Spawn protection (UrT g_roundtime, g_maxrounds,
 //    g_suddendeath, g_respawnprotection); Swap roles and Warmup (UrT g_swaproles,
 //    g_warmup; baseq3 g_doWarmup + g_warmup) are read at map start: held back while the
-//    page is open like Quad damage, then one restart;
+//    page is open like Quad damage, then one restart; the Weapons row in Urban Terror
+//    (R27) holds UrT's g_gear and puts the one allowed weapon into local players' gear;
 //  - a pending map and game type (cl_splitSrvMap / cl_splitSrvGametype, temp),
 //    loaded when the page is left.
 // Saved sets: <homepath>/<game>/serversettings/<key>.cfg, `cvar "value"` lines.
@@ -52,21 +53,22 @@ static cvar_t *srvSelfDamage, *srvGod, *srvHealth, *srvSet, *srvMap, *srvGametyp
 static cvar_t *srvQuad, *srvSpeed, *srvWeapRespawn, *srvModInsta, *srvPowerups;
 static cvar_t *srvRespawnTime, *srvWave;
 static cvar_t *srvRoundTime, *srvMaxRounds, *srvSudden, *srvSwap, *srvProtect, *srvWarmup;	// R25
+static cvar_t *srvGear;	// R27: the Weapons row in Urban Terror
 
 // R24: a game cvar the page holds at a value; a value we did not write is the game's own
 // (its base), given back once when the row goes to Default
 typedef struct {
 	const char	*name;
-	char		base[32];
-	char		applied[32];	// what we set it to, "" = untouched
+	char		base[64];
+	char		applied[64];	// what we set it to, "" = untouched
 } srvHold_t;
 
 enum { SRV_H_RESPAWNDELAY, SRV_H_REDWAVE, SRV_H_BLUEWAVE, SRV_H_FORCERESPAWN, SRV_H_WAVES,
-	SRV_H_ROUNDTIME, SRV_H_MAXROUNDS, SRV_H_SUDDEN, SRV_H_SWAP, SRV_H_PROTECT, SRV_H_WARMUP, SRV_H_DOWARMUP, SRV_H_COUNT };
+	SRV_H_ROUNDTIME, SRV_H_MAXROUNDS, SRV_H_SUDDEN, SRV_H_SWAP, SRV_H_PROTECT, SRV_H_WARMUP, SRV_H_DOWARMUP, SRV_H_GEAR, SRV_H_COUNT };
 static srvHold_t srvHolds[ SRV_H_COUNT ] = {
 	{ "g_respawndelay" }, { "g_redwave" }, { "g_bluewave" }, { "g_forcerespawn" }, { "g_waverespawns" },
 	{ "g_roundtime" }, { "g_maxrounds" }, { "g_suddendeath" }, { "g_swaproles" }, { "g_respawnprotection" },
-	{ "g_warmup" }, { "g_doWarmup" }
+	{ "g_warmup" }, { "g_doWarmup" }, { "g_gear" }
 };
 
 static struct {
@@ -77,6 +79,7 @@ static struct {
 	char		powerups[8];		// R17
 	char		swap[8];			// R25: Swap roles / Warmup as the server has them
 	char		warmup[8];
+	char		gear[16];			// R27: the UrT Weapons row as the game has it (held while the page is open)
 	char		speedBase[32];		// g_speed as the game had it (R16 Player speed)
 	char		speedApplied[32];	// what we set it to, "" = untouched
 	int			respawnApplied;		// g_weaponrespawn we set, 0 = untouched
@@ -85,6 +88,9 @@ static struct {
 	int			lastBots;
 	int			lastSkill;
 	char		lastHealth[8];
+	char		lastGear[24];		// R27: gear mode / instagib last seen
+	char		gearSent[16];		// R27: the mode local players' gear userinfo carries
+	int			gearChangeTime;		// R27: when lastGear changed, 0 = userinfo up to date
 
 	char		sets[SRV_MAX_SETS][PROFILE_NAME_LEN + 1];
 	int			numSets;
@@ -105,7 +111,7 @@ static const char *srvSetCvars[] = {
 	"cl_splitSrvWeaponRespawn", "cl_splitSrvModInstagib", "cl_splitSrvPowerups",
 	"cl_splitSrvRespawnTime", "cl_splitSrvWaveRespawns",
 	"cl_splitSrvRoundTime", "cl_splitSrvMaxRounds", "cl_splitSrvSuddenDeath", "cl_splitSrvSwapRoles",
-	"cl_splitSrvSpawnProtection", "cl_splitSrvWarmup", NULL
+	"cl_splitSrvSpawnProtection", "cl_splitSrvWarmup", "cl_splitSrvGear", NULL
 };
 
 
@@ -194,6 +200,9 @@ static void SRV_Sync( void ) {
 		Q_strncpyz( srv.powerups, srvPowerups->string, sizeof( srv.powerups ) );
 		Q_strncpyz( srv.swap, srvSwap->string, sizeof( srv.swap ) );
 		Q_strncpyz( srv.warmup, srvWarmup->string, sizeof( srv.warmup ) );
+		if ( srvGear ) {
+			Q_strncpyz( srv.gear, srvGear->string, sizeof( srv.gear ) );
+		}
 	}
 	// a game with its own instagib (R16): not our preset; while it is on, no weapon levers
 	Cvar_Set( "sv_splitInstagib", CL_SplitSrvModInstagib()[0] ? "0" : srv.instagib );
@@ -298,7 +307,7 @@ static void SRV_WeaponRespawn( qboolean local ) {
 
 // R24: hold a game cvar at want (NULL = give the game's own value back, once); qtrue = written
 static qboolean SRV_Hold( srvHold_t *h, const char *want ) {
-	char cur[32];
+	char cur[64];
 
 	if ( Cvar_Flags( h->name ) == CVAR_NONEXISTENT ) {
 		return qfalse;
@@ -448,6 +457,151 @@ static void SRV_RoundRules( qboolean local ) {
 
 /*
 ==================
+R27: the Weapons row in Urban Terror
+
+UrT has no weapon pickups: players pick gear, and the server cvar g_gear lists
+the gear letters that are NOT allowed (UrT 4.3: a letter is 'A' + the item's
+index in its item list, then 'a' on: F Beretta, G Desert Eagle, H SPAS-12,
+I MP5K, J UMP45, K HK69, L LR300, M G36, N PSG-1, O HE grenade, P flash, Q smoke,
+R vest, S tac goggles, T medkit, U silencer, V laser, W helmet, X extra ammo,
+Z SR-8, a AK-103, c Negev, e M4A1, f Glock, g Colt 1911, h MAC-11, i FR-F1,
+j Benelli M4, k P90, l .44 Magnum, m TOD-50; 'A' = an empty gear slot).  The
+knife is not gear: it always stays.  "X only" disallows every weapon and
+grenade but X (items stay allowed); UrT applies g_gear at each spawn and just
+drops forbidden gear (measured, r27-probe: a player without X keeps only the
+knife), so every local player's gear userinfo gets X too (pistols in the
+sidearm slot, the rest in the primary slot).  Held back while the page is open
+(srv.gear): every g_gear change prints a line to every player.  A group keeps the player's own
+choice when it is in the group, else its first weapon.
+==================
+*/
+typedef struct {
+	const char	*key;		// cl_splitSrvGear value
+	const char	*label;
+	const char	*allow;		// the weapons left allowed, the first one is given; NULL = Default
+} srvGear_t;
+
+static const srvGear_t srvGearModes[] = {
+	{ "default", "Default", NULL },
+	{ "beretta", "Beretta only", "F" },
+	{ "deagle", "Desert Eagle only", "G" },
+	{ "glock", "Glock only", "f" },
+	{ "colt", "Colt 1911 only", "g" },
+	{ "magnum", ".44 Magnum only", "l" },
+	{ "spas", "SPAS-12 only", "H" },
+	{ "benelli", "Benelli M4 only", "j" },
+	{ "mp5k", "MP5K only", "I" },
+	{ "ump45", "UMP45 only", "J" },
+	{ "mac11", "MAC-11 only", "h" },
+	{ "p90", "P90 only", "k" },
+	{ "hk69", "HK69 only", "K" },
+	{ "lr300", "LR300 only", "L" },
+	{ "g36", "G36 only", "M" },
+	{ "m4", "M4A1 only", "e" },
+	{ "ak103", "AK-103 only", "a" },
+	{ "negev", "Negev only", "c" },
+	{ "psg1", "PSG-1 only", "N" },
+	{ "sr8", "SR-8 only", "Z" },
+	{ "frf1", "FR-F1 only", "i" },
+	{ "knife", "Knives only", "" },
+	{ "pistols", "Pistols only", "FGfgl" },
+	{ "shotguns", "Shotguns only", "Hj" },
+	{ "smgs", "SMGs only", "IJhk" },
+	{ "rifles", "Rifles only", "LMea" },
+	{ "snipers", "Snipers only", "ZNi" },
+};
+
+#define SRV_GEAR_WEAPONS	"FGHIJKLMNZacefghijklm"	// every weapon letter (the knife is not gear)
+#define SRV_GEAR_GRENADES	"OPQ"					// HE, flash, smoke: not allowed in any "only" mode
+#define SRV_GEAR_PISTOLS	"FGfgl"					// sidearm slot
+
+
+// the Weapons row's values in Urban Terror
+int CL_SplitSrvGearChoices( const char **values, const char **labels, int max ) {
+	int i;
+
+	for ( i = 0; i < (int)ARRAY_LEN( srvGearModes ) && i < max; i++ ) {
+		values[i] = srvGearModes[i].key;
+		labels[i] = srvGearModes[i].label;
+	}
+	return i;
+}
+
+
+// the "only" mode of a cl_splitSrvGear value, NULL = Default (or not an UrT local game, or instagib)
+static const srvGear_t *SRV_GearMode( const char *key ) {
+	int i;
+
+	if ( !srvGear || !CL_SplitSrvLocalGame() || !CL_SplitSrvUrT() || Cvar_Flags( "g_gear" ) == CVAR_NONEXISTENT
+		|| CL_SplitSrvInstagibOn() ) {
+		return NULL;
+	}
+	for ( i = 1; i < (int)ARRAY_LEN( srvGearModes ); i++ ) {
+		if ( !Q_stricmp( key, srvGearModes[i].key ) ) {
+			return &srvGearModes[i];
+		}
+	}
+	return NULL;
+}
+
+
+// UrT's g_gear held at the mode's disallow list; Default gives the game's own back once
+static void SRV_GearRules( qboolean local ) {
+	const srvGear_t *m = SRV_GearMode( srv.gear );
+	const char *all = SRV_GEAR_WEAPONS SRV_GEAR_GRENADES;
+	char want[64];
+	int i, k = 0;
+
+	if ( !local || !CL_SplitSrvUrT() ) {
+		return;
+	}
+	if ( !m ) {
+		SRV_HoldNote( SRV_H_GEAR, NULL, "gear" );
+		return;
+	}
+	for ( i = 0; all[i] && k < (int)sizeof( want ) - 1; i++ ) {
+		if ( !strchr( m->allow, all[i] ) ) {
+			want[k++] = all[i];
+		}
+	}
+	want[k] = '\0';
+	SRV_HoldNote( SRV_H_GEAR, want, m->label );
+}
+
+
+// a local player's gear userinfo with the mode's weapon in its slot
+static void SRV_GearUserinfo( char *info, int size ) {
+	const srvGear_t *m = SRV_GearMode( srv.gearSent );
+	char gear[16];
+	int slot, len;
+
+	if ( !m || !m->allow[0] ) {
+		return;		// Default / Knives only: the player's own gear (forbidden parts are dropped by UrT)
+	}
+	Q_strncpyz( gear, Info_ValueForKey( info, "gear" ), sizeof( gear ) );
+	if ( !gear[0] ) {
+		Q_strncpyz( gear, "GLAORWA", sizeof( gear ) );	// UrT's own default
+	}
+	for ( len = (int)strlen( gear ); len < 7; len++ ) {
+		gear[len] = 'A';
+	}
+	gear[7] = '\0';
+	// a forbidden secondary weapon becomes an empty slot: UrT refuses a Negev with a secondary weapon
+	// (measured, r27-urt). The other slots keep the player's letters: UrT drops forbidden ones itself,
+	// and it refuses a gear string without a sidearm (an empty sidearm slot: knife only, r27-live)
+	if ( gear[2] != 'A' && !strchr( m->allow, gear[2] ) ) {
+		gear[2] = 'A';
+	}
+	slot = strchr( SRV_GEAR_PISTOLS, m->allow[0] ) ? 0 : 1;	// sidearm / primary
+	if ( !strchr( m->allow, gear[slot] ) || gear[slot] == 'A' ) {
+		gear[slot] = m->allow[0];
+	}
+	Info_SetValueForKey_s( info, size, "gear", gear );
+}
+
+
+/*
+==================
 CL_SplitSrvFrame
 
 Once per frame: the server-side copies; bot count/difficulty changes that
@@ -476,10 +630,22 @@ void CL_SplitSrvFrame( void ) {
 		Q_strncpyz( srv.lastHealth, va( "%s/%i", srvHealth->string, CL_SplitSrvInstagibOn() ), sizeof( srv.lastHealth ) );
 		cvar_modifiedFlags |= CVAR_USERINFO;	// player 1; the others' userinfo is polled
 	}
+	if ( strcmp( va( "%s/%i", srv.gear, SRV_GearMode( srv.gear ) != NULL ), srv.lastGear ) ) {
+		// R27: the gear the Weapons row puts into local players' userinfo (UrT): sent 300 ms after
+		// g_gear changed (below), so the game has the new g_gear when it re-gears a player at once
+		Q_strncpyz( srv.lastGear, va( "%s/%i", srv.gear, SRV_GearMode( srv.gear ) != NULL ), sizeof( srv.lastGear ) );
+		srv.gearChangeTime = cls.realtime ? cls.realtime : 1;
+	}
+	if ( srv.gearChangeTime && cls.realtime - srv.gearChangeTime >= 300 ) {
+		srv.gearChangeTime = 0;
+		Q_strncpyz( srv.gearSent, srv.gear, sizeof( srv.gearSent ) );
+		cvar_modifiedFlags |= CVAR_USERINFO;	// player 1; the others' userinfo is polled
+	}
 	SRV_Speed( local );
 	SRV_WeaponRespawn( local );
 	SRV_RespawnTime( local );
 	SRV_RoundRules( local );
+	SRV_GearRules( local );
 }
 
 
@@ -487,19 +653,23 @@ void CL_SplitSrvFrame( void ) {
 ==================
 CL_SplitSrvUserinfo
 
-Player health (a handicap for every local player, local games only) over
-whatever the profiles say.
+Player health (a handicap for every local player, local games only) and the
+Urban Terror Weapons row's gear (R27) over whatever the profiles say.
 ==================
 */
 const char *CL_SplitSrvUserinfo( int n, const char *info ) {
 	static char out[MAX_SPLITVIEW][MAX_INFO_STRING];
 	const int h = srvHealth ? srvHealth->integer : 0;
+	const qboolean handicap = ( h >= 5 && h <= 95 && !CL_SplitSrvInstagibOn() ) ? qtrue : qfalse;
 
-	if ( h < 5 || h > 95 || (unsigned)n >= MAX_SPLITVIEW || !CL_SplitSrvLocalGame() || CL_SplitSrvInstagibOn() ) {
+	if ( (unsigned)n >= MAX_SPLITVIEW || !CL_SplitSrvLocalGame() || ( !handicap && !SRV_GearMode( srv.gearSent ) ) ) {
 		return info;
 	}
 	Q_strncpyz( out[n], info, sizeof( out[n] ) );
-	Info_SetValueForKey( out[n], "handicap", va( "%i", h ) );
+	if ( handicap ) {
+		Info_SetValueForKey( out[n], "handicap", va( "%i", h ) );
+	}
+	SRV_GearUserinfo( out[n], sizeof( out[n] ) );
 	return out[n];
 }
 
@@ -627,7 +797,7 @@ void CL_SplitSrvReset( void ) {
 	static const char *natives[] = { "timelimit", "fraglimit", "capturelimit", "g_friendlyFire", "g_gravity", NULL };
 	cvar_t *ours[] = { srvInstagib, srvWeapons, srvSpawn, srvAmmo, srvBots, srvBotSkill, srvSelfDamage, srvGod, srvHealth,
 		srvQuad, srvSpeed, srvWeapRespawn, srvPowerups, srvRespawnTime, srvWave,
-		srvRoundTime, srvMaxRounds, srvSudden, srvSwap, srvProtect, srvWarmup };
+		srvRoundTime, srvMaxRounds, srvSudden, srvSwap, srvProtect, srvWarmup, srvGear };
 	int i;
 
 	for ( i = 0; i < (int)ARRAY_LEN( ours ); i++ ) {
@@ -948,6 +1118,10 @@ void CL_SplitSrvInit( void ) {
 	Cvar_CheckRange( srvWarmup, "-1", "60", CV_INTEGER );
 	Cvar_SetDescription( srvWarmup, "Server options: seconds of warmup before a match, 0 = off (Urban Terror g_warmup; Quake 3 g_doWarmup + g_warmup); "
 		"-1 = the game's own. Applies with a restart." );
+	srvGear = Cvar_Get( "cl_splitSrvGear", "default", CVAR_ARCHIVE_ND );
+	Cvar_SetDescription( srvGear, "Server options (Urban Terror): the Weapons row: default (the game's own g_gear), "
+		"one weapon only (beretta deagle glock colt magnum spas benelli mp5k ump45 mac11 p90 hk69 lr300 g36 m4 ak103 "
+		"negev psg1 sr8 frf1), knife, or a group (pistols shotguns smgs rifles snipers). Sets g_gear and local players' gear; next spawn." );
 	srvMap = Cvar_Get( "cl_splitSrvMap", "", CVAR_TEMP );
 	srvGametype = Cvar_Get( "cl_splitSrvGametype", "0", CVAR_TEMP );
 	srvModInsta = Cvar_Get( "cl_splitSrvModInstagib", "0", CVAR_TEMP );
@@ -956,6 +1130,7 @@ void CL_SplitSrvInit( void ) {
 	srv.lastSkill = srvBotSkill->integer;
 	Q_strncpyz( srv.lastHealth, va( "%s/%i", srvHealth->string, CL_SplitSrvInstagibOn() ), sizeof( srv.lastHealth ) );
 	SRV_Sync();
+	Q_strncpyz( srv.gearSent, srv.gear, sizeof( srv.gearSent ) );	// R27: from the first connect
 }
 
 
