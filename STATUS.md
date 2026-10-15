@@ -2,6 +2,19 @@
 
 ## Current state
 
+**1.0.1 prepared 2026-10-15, push pending.** The maintainer OK'd 1.0.0.5
+("this works great") and asked for a release with the patch bump: `main` =
+`249198a7` (VERSION 1.0.1, CHANGELOG 1.0.1 = dev builds 1.0.0.1-1.0.0.5,
+release workflow now takes the release notes from that CHANGELOG section)
++ this STATUS commit, annotated tag `v1.0.1` on `249198a7`. **Neither the
+commits nor the tag are on GitHub yet**: the lead's shells cannot reach the
+credential store (`wincredman`) and the `gh` token is expired, so the
+maintainer pushes (`gh auth login`, then `git push origin main v1.0.1`); the
+tag push runs `.github/workflows/release.yml` (Linux tar.gz + Windows zip +
+GitHub release with the CHANGELOG notes). 1.0.1 (same code as 1.0.0.5) is
+installed in the maintainer's game folder, 1.0.0.5 copy in
+`work/installed-backup/`.
+
 **1.0.0 published 2026-10-07:**
 https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.0
 (GitHub Actions on tag `v1.0.0`: Windows zip and Linux tar.gz, both jobs
@@ -604,6 +617,19 @@ defaults; the first save rewrites a damaged file clean):
   inner 40 % of the bubble); the Aim assist host-cvar list above is R12's.
 
 ## Last round
+
+**R28 release prep (Windows, 2026-10-15, lead only; VERSION 1.0.1).** No
+code change since 1.0.0.5. Folded the five dev CHANGELOG entries into one
+`## 1.0.1` section (intro line + the bullets in order); `release.yml`'s
+release job now checks out the repo, extracts the `## <VERSION>` section of
+CHANGELOG.md with awk into `notes.md` (fails the job if empty) and passes it
+as `body_path` (1.0.0's release had no body). Local Release build OK,
+`BUILD-INFO.txt` version 1.0.1, the binary carries `splitscreen-1.0.1`; a
+windowed baseq3 boot (q3dm1, entered the game) ran, but as in R26/R27 the
+lead's own scripted run never executed its cfg `wait`/`quit` (the lead's
+shell session differs from the executors'; killed by the lead, pid 24444).
+Push blocked on credentials (see Current state). Commit `249198a7`, tag
+`v1.0.1`.
 
 **R26 + R27 (Windows, 2026-10-12; two Opus executors in parallel + lead;
 VERSION 1.0.0.5; `main` = merge `6dd92ffd` + `cdc46b44`; installed in the
@@ -1911,8 +1937,15 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0a. **The maintainer's check of 1.0.0.5** (installed in his game folder;
-   `BUILD-INFO.txt` there says 1.0.0.5):
+0. **Publish 1.0.1 (the maintainer):** `gh auth login -h github.com`, then
+   `git push origin main v1.0.1`; watch
+   https://github.com/rebelancap/Quake3e-splitscreen/actions (jobs Version
+   check, Linux x86_64, Windows x64, GitHub release); the release page
+   should show the 1.0.1 CHANGELOG text and the two archives. If the notes
+   step fails, the fallback is the 1.0.0 behaviour (no body): drop
+   `body_path` and the notes step, re-tag.
+0a. **The maintainer's check of 1.0.1** (installed in his game folder;
+   `BUILD-INFO.txt` there says 1.0.1; same code as 1.0.0.5):
    - UrT, sniper rifle: step LT through the zoom levels, each step looks
      slower in proportion; LB reset -> full speed; Controls -> Zoom
      sensitivity 200 % (much slower) and 25 % (barely slows); the carried-over
@@ -2869,6 +2902,11 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
+- **R28 (2026-10-15):** no game process running (the lead killed its own
+  hung boot run, pid 24444). **Unpushed:** `main` commits `249198a7` + the
+  STATUS commit and tag `v1.0.1` (the maintainer pushes). Maintainer's
+  `<Quake3 folder>`: exe + `BUILD-INFO.txt` = 1.0.1 (local build, stamped
+  `fe2d0ee8-dirty`), 1.0.0.5 copy in `work/installed-backup/`. Clean tree.
 - **R26/R27 (2026-10-12):** none live. The lead killed its own hung
   smoke-run game process (pid 33484); no game process running. Tests in
   `work/urttest` (restored from the run's backup tar) / `work/q3test`;
