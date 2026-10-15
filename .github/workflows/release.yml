@@ -147,6 +147,7 @@ jobs:
     permissions:
       contents: write
     steps:
+    - uses: actions/checkout@v7
     - uses: actions/download-artifact@v8
       with:
         path: dist
@@ -155,10 +156,21 @@ jobs:
     - name: List
       run: ls -l dist
 
+    # Release notes = this version's section of CHANGELOG.md (between its
+    # "## <VERSION>" heading and the next "## " heading).
+    - name: Release notes from CHANGELOG.md
+      env:
+        VERSION: ${{ needs.version.outputs.version }}
+      run: |
+        awk -v v="$VERSION" '/^## / { on = ($2 == v); next } on { print }' CHANGELOG.md > notes.md
+        [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VERSION"; exit 1; }
+        cat notes.md
+
     - uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
         name: Quake3e-splitscreen ${{ needs.version.outputs.version }}
+        body_path: notes.md
         files: |
           dist/quake3e-splitscreen-${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
           dist/quake3e-splitscreen-${{ needs.version.outputs.version }}-windows-x86_64.zip

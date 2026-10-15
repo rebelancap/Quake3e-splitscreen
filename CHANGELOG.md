@@ -1,23 +1,20 @@
 # Changelog
 
-## 1.0.0.5 (dev)
+## 1.0.1
 
-- Server options, Urban Terror: the **Weapons** row now works (it was greyed):
-  Default, one weapon only (Beretta ... FR-F1, 20 weapons), Knives only, or
-  Pistols / Shotguns / SMGs / Rifles / Snipers only. Uses `g_gear`; local players
-  get that weapon, grenades are off, the knife always stays. From the next spawn.
+Urban Terror fixes and more host options; everything below was dev builds
+1.0.0.1 to 1.0.0.5.
 
-## 1.0.0.4 (dev)
-
-- Gamepad look now slows with the actual zoom: every zoom level (Urban Terror's
-  scope steps, Quake 3's +zoom) gets slower in proportion to the magnification,
-  and full speed returns as soon as the zoom ends (reset, respawn, weapon change).
-- Controls: **Zoom sensitivity** (25-200 %, default 100 %) replaces "Look speed
-  zoomed": how much the look speed drops when zoomed; 100 % = proportional to the
-  zoom, 200 % slows twice as hard. Old profiles' setting is carried over.
-
-## 1.0.0.3 (dev)
-
+- Urban Terror, local games: players 2+ no longer end up "walking on top of
+  the map" after a round start. With UrT's default `ut_timenudge` (25) their
+  game stopped following the server's position after it started; on your own
+  server the nudge is now neutralised (remote servers unchanged).
+- Server options: new **Respawn time** row (Default / 1-15 s, default 3 s,
+  applies now). Urban Terror: sets `g_respawndelay` and the team wave period
+  (`g_redwave` / `g_bluewave`); Quake 3: respawn by itself after that time.
+- Server options: new **Wave respawns** row (Off / On / Default, Urban Terror
+  only, `g_waverespawns`), **Off by default** in local games so Respawn time
+  is exact; On makes a team respawn together (adds up to one respawn time).
 - Server options, Urban Terror round games (Team Survivor, Bomb, ...): new rows
   **Round time** (Default / 1-10 min, from the next round), **Max rounds**
   (Default / Unlimited / 1-30), **Sudden death** (tied match: one more round),
@@ -27,22 +24,16 @@
 - Server options: new **Warmup** row (Default / Off / 5-30 s; Urban Terror
   `g_warmup`, Quake 3 `g_doWarmup` + `g_warmup`); restarts the map when you
   leave the page.
-
-## 1.0.0.2 (dev)
-
-- Server options: new **Respawn time** row (Default / 1-15 s, default 3 s,
-  applies now). Urban Terror: sets `g_respawndelay` and the team wave period
-  (`g_redwave` / `g_bluewave`); Quake 3: respawn by itself after that time.
-- Server options: new **Wave respawns** row (Off / On / Default, Urban Terror
-  only, `g_waverespawns`), **Off by default** in local games so Respawn time
-  is exact; On makes a team respawn together (adds up to one respawn time).
-
-## 1.0.0.1 (dev)
-
-- Urban Terror, local games: players 2+ no longer end up "walking on top of
-  the map" after a round start. With UrT's default `ut_timenudge` (25) their
-  game stopped following the server's position after it started; on your own
-  server the nudge is now neutralised (remote servers unchanged).
+- Gamepad look now slows with the actual zoom: every zoom level (Urban Terror's
+  scope steps, Quake 3's +zoom) gets slower in proportion to the magnification,
+  and full speed returns as soon as the zoom ends (reset, respawn, weapon change).
+- Controls: **Zoom sensitivity** (25-200 %, default 100 %) replaces "Look speed
+  zoomed": how much the look speed drops when zoomed; 100 % = proportional to the
+  zoom, 200 % slows twice as hard. Old profiles' setting is carried over.
+- Server options, Urban Terror: the **Weapons** row now works (it was greyed):
+  Default, one weapon only (Beretta ... FR-F1, 20 weapons), Knives only, or
+  Pistols / Shotguns / SMGs / Rifles / Snipers only. Uses `g_gear`; local players
+  get that weapon, grenades are off, the knife always stays. From the next spawn.
 
 ## 1.0.0
 
