@@ -2,18 +2,17 @@
 
 ## Current state
 
-**1.0.1 prepared 2026-10-15, push pending.** The maintainer OK'd 1.0.0.5
-("this works great") and asked for a release with the patch bump: `main` =
-`249198a7` (VERSION 1.0.1, CHANGELOG 1.0.1 = dev builds 1.0.0.1-1.0.0.5,
-release workflow now takes the release notes from that CHANGELOG section)
-+ this STATUS commit, annotated tag `v1.0.1` on `249198a7`. **Neither the
-commits nor the tag are on GitHub yet**: the lead's shells cannot reach the
-credential store (`wincredman`) and the `gh` token is expired, so the
-maintainer pushes (`gh auth login`, then `git push origin main v1.0.1`); the
-tag push runs `.github/workflows/release.yml` (Linux tar.gz + Windows zip +
-GitHub release with the CHANGELOG notes). 1.0.1 (same code as 1.0.0.5) is
-installed in the maintainer's game folder, 1.0.0.5 copy in
-`work/installed-backup/`.
+**1.0.1 published 2026-10-15:**
+https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.1
+(GitHub Actions run 38691527908 on tag `v1.0.1`, all four jobs green,
+~4 min; Linux tar.gz + Windows zip attached, release body = the 1.0.1
+CHANGELOG section). `main` = `007e227f` (VERSION 1.0.1; same code as
+1.0.0.5, which the maintainer OK'd: "this works great"). The push needed
+the maintainer's `gh auth login` + `gh auth refresh -s workflow`; the lead
+pushed with `git -c credential.helper='!gh auth git-credential'`. 1.0.1 is
+installed in the maintainer's game folder (1.0.0.5 copy in
+`work/installed-backup/`). Further work on `main` continues as `1.0.1.N`
+dev builds.
 
 **1.0.0 published 2026-10-07:**
 https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.0
@@ -628,8 +627,9 @@ as `body_path` (1.0.0's release had no body). Local Release build OK,
 windowed baseq3 boot (q3dm1, entered the game) ran, but as in R26/R27 the
 lead's own scripted run never executed its cfg `wait`/`quit` (the lead's
 shell session differs from the executors'; killed by the lead, pid 24444).
-Push blocked on credentials (see Current state). Commit `249198a7`, tag
-`v1.0.1`.
+Pushed after the maintainer refreshed the gh token with the `workflow`
+scope (needed to update `release.yml`); run 38691527908 green, release
+published 06:21 UTC with the CHANGELOG notes. Commit `249198a7`, tag `v1.0.1`.
 
 **R26 + R27 (Windows, 2026-10-12; two Opus executors in parallel + lead;
 VERSION 1.0.0.5; `main` = merge `6dd92ffd` + `cdc46b44`; installed in the
@@ -1937,13 +1937,8 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-0. **Publish 1.0.1 (the maintainer):** `gh auth login -h github.com`, then
-   `git push origin main v1.0.1`; watch
-   https://github.com/rebelancap/Quake3e-splitscreen/actions (jobs Version
-   check, Linux x86_64, Windows x64, GitHub release); the release page
-   should show the 1.0.1 CHANGELOG text and the two archives. If the notes
-   step fails, the fallback is the 1.0.0 behaviour (no body): drop
-   `body_path` and the notes step, re-tag.
+0. **1.0.1 is published** (2026-10-15). The maintainer smoke-tests the
+   downloaded Windows zip once (unpack beside baseq3, start the Vulkan exe).
 0a. **The maintainer's check of 1.0.1** (installed in his game folder;
    `BUILD-INFO.txt` there says 1.0.1; same code as 1.0.0.5):
    - UrT, sniper rifle: step LT through the zoom levels, each step looks
@@ -2902,9 +2897,9 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R28 (2026-10-15):** no game process running (the lead killed its own
-  hung boot run, pid 24444). **Unpushed:** `main` commits `249198a7` + the
-  STATUS commit and tag `v1.0.1` (the maintainer pushes). Maintainer's
+- **R28 (2026-10-15):** none live. No game process running (the lead killed
+  its own hung boot run, pid 24444). `main` and tag `v1.0.1` pushed, release
+  published. Maintainer's
   `<Quake3 folder>`: exe + `BUILD-INFO.txt` = 1.0.1 (local build, stamped
   `fe2d0ee8-dirty`), 1.0.0.5 copy in `work/installed-backup/`. Clean tree.
 - **R26/R27 (2026-10-12):** none live. The lead killed its own hung
