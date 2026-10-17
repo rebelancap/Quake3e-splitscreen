@@ -2,6 +2,19 @@
 
 ## Current state
 
+**1.0.2 prepared 2026-10-17 (R29, upstream sync; not yet pushed/tagged):**
+branch `sync-upstream-2026-10-14` = `main` + merge of ec-/Quake3e `main`
+@ `3173cef0` (2026-10-14) + VERSION 1.0.2 + CHANGELOG `## 1.0.2`. No
+splitscreen feature change; upstream brought the hunk memory rework
+(`ec431ef9`: per-bank `Hunk_Clear(h_low|h_high)`, `CL_ClearMemory` gone,
+`CM_ClearMap` in `CL_ShutdownCGame`) plus four small fixes. Our adaptation:
+`CL_ShutdownCGame` clears the collision map only when no local server
+runs, no other local cgame is up (`CL_SplitAnyCGame`) and no cgame is
+restarting in place (`CL_SplitStartCGame` now raises `cl_splitInPlaceInit`
+before the shutdown); `hunk_generation` still bumps on every hunk clear.
+R28 runtime pass green (Last round). Pending: merge to `main`, tag
+`v1.0.2`, push (maintainer).
+
 **1.0.1 published 2026-10-15:**
 https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.1
 (GitHub Actions run 38691527908 on tag `v1.0.1`, all four jobs green,
@@ -616,6 +629,36 @@ defaults; the first save rewrites a damaged file clean):
   inner 40 % of the bubble); the Aim assist host-cvar list above is R12's.
 
 ## Last round
+
+**R29 upstream sync (Windows, 2026-10-17; lead merged, one Opus executor
+verified; VERSION 1.0.2; commit `fca965be` on `sync-upstream-2026-10-14`).**
+Five upstream commits since our base `2b375bd1`: AVI sound-capture crash,
+local server really killed before demo playback, Vulkan texture bind on
+`flames`, no g_sync warning with autoRecord, and `ec431ef9` hunk rework.
+Conflicts in `cl_cgame.c` (`CM_ClearMap` gating, see Current state),
+`cl_main.c` (`CL_Disconnect`: upstream moved the stop-record block after
+the cgame shutdown; our `CL_SplitscreenDisconnect()` stays first) and
+`common.c` (upstream's per-bank `Hunk_Clear`/`Hunk_ClearToMark` +
+`hunk_generation++`). Build clean (`build/r28-build.log`, usual MSB
+warnings). **Runtime (executor, `scripts/tests/r28-*`, evidence
+`work/r28-*`):** Q3 local server q3dm1 + P2/P3 (P1 restarts in place
+`1028x720 -> 640x480`, no CM reload, jump z 82->118->82), map change to
+q3dm2 (all three cgames back, one `CM_LoadMap`), `vid_restart`,
+`disconnect` -- PASS. Dedicated `quake3e-ss.ded` q3dm17 (`com_sv_running`
+0): P2 join keeps the CM, `dropplayer 2` -> P1 still predicts/collides
+for 5 s, rejoin + `vid_restart` clears the CM with the last cgame and
+reloads it exactly once -- PASS. UrT local ut4_casa -> ut4_turnpike same
+cfg -- PASS (492 MB hunk with 3 players, 28.6 MB after disconnect; test
+home restored byte-identical). No `Hunk_Clear(`/`non-zero temp`/
+`Com_Error`/`can't swap banks`/headroom hit in any log. **Found, predates
+the merge:** with **3** local players a scripted `devmap` map change
+leaves every view on "Connection Interrupted" (health frozen, log silent
+after all three reach CS_ACTIVE); 1.0.1 does the same
+(`work/r28-q3-local-101*`); 2 players are fine. Minimal repro
+`scripts/tests/r28-probe3.cfg`, `work/r28-probe3*`. Not tested: remote
+map change (`rcon map`) with extras connected; `CL_DropContext`'s
+error-isolation branch frees a VM without the clear-map check (harmless
+while P1 always has a cgame when extras do).
 
 **R28 release prep (Windows, 2026-10-15, lead only; VERSION 1.0.1).** No
 code change since 1.0.0.5. Folded the five dev CHANGELOG entries into one
@@ -1937,6 +1980,25 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
+00. **Ship 1.0.2 (upstream sync, R29):** `git checkout main && git merge
+   --ff-only sync-upstream-2026-10-14 && git tag v1.0.2 && git push origin
+   main v1.0.2` (maintainer's credentials; `release.yml` builds and attaches
+   from the tag with the `## 1.0.2` CHANGELOG section as body). Then copy
+   `build\Release\quake3e-vulkan-ss.x64.exe` + `BUILD-INFO.txt` (1.0.2) into
+   the maintainer's game folder (1.0.1 copy to `work/installed-backup/`).
+   Maintainer's one check: a UrT game with 2-3 pads, join/leave a player
+   mid-game and change the layout -- everyone keeps walking on the map
+   (collision map kept), then `vid_restart` and a map change.
+00a. **3-player map-change freeze (pre-existing, found R29):** 3 local
+   players + `devmap <next map>` -> every view "Connection Interrupted",
+   client log silent after CS_ACTIVE x3; 2 players fine; 1.0.1 identical.
+   Repro `scripts/tests/r28-probe3.cfg`; start from `work/r28-probe3.log`
+   with `cl_shownet`/server-side `sv_showloss`-style logging on both ends
+   (local server: is the third client's snapshot delta stuck, or are the
+   extra clients' netchans not resent after the gamestate?). Own round.
+00b. Remote map change with extras connected (`rcon map q3dm7` on the
+   `r28-remote.cfg` dedicated server): confirm the old CM goes away and
+   the new one loads once. Test-only, fold into 00a's round.
 0. **1.0.1 is published** (2026-10-15). The maintainer smoke-tests the
    downloaded Windows zip once (unpack beside baseq3, start the Vulkan exe).
 0a. **The maintainer's check of 1.0.1** (installed in his game folder;
@@ -2626,6 +2688,9 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Open questions
 
+- **R29 (2026-10-17):** does 1.0.2 ship with the pre-existing 3-player
+  map-change freeze (00a) unfixed? Default: yes -- the sync changes nothing
+  there and 1.0.1 has it too; 00a becomes 1.0.3.
 - **R26/R27 (2026-10-12):** zoom floor 0.02 (UrT zoom 3 followed exactly;
   default keep); aim assist's own rotation not zoom-scaled (default: leave
   until noticed); UrT Weapons row leaves bots/remote players' gear alone and
@@ -2897,6 +2962,12 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
+- **R29 (2026-10-17):** no game/server process running (executor killed
+  its runs; `tasklist` clean). Branch `sync-upstream-2026-10-14` holds the
+  merge, **not yet merged to `main`, not tagged, not pushed** (00). The
+  maintainer's game folder still runs 1.0.1. `build\Release` = 1.0.2
+  (stamped `38ed1b64-dirty`, built before the merge commit). Test homes
+  `work/q3test`, `work/urttest` restored.
 - **R28 (2026-10-15):** none live. No game process running (the lead killed
   its own hung boot run, pid 24444). `main` and tag `v1.0.1` pushed, release
   published. Maintainer's
