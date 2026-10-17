@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.2
+
+Synced with upstream Quake3e (2026-10-14). No splitscreen changes.
+
+- Upstream fixes: crash in sound capture (`video`/AVI recording) when the
+  sample size is wrong; a local server is really stopped before a demo plays;
+  Vulkan texture binding regression on the `flames` map; no
+  `g_synchronousClients` warning when `cl_autoRecordDemo` is on.
+- Upstream reworked engine memory handling (client and server hunks are now
+  cleared separately). Splitscreen adapted: the collision map shared by all
+  local players is only released when the last local player's game ends, and
+  survives a player's game restarting for a layout change.
+
 ## 1.0.1
 
 Urban Terror fixes and more host options; everything below was dev builds

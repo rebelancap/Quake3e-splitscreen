@@ -1033,6 +1033,8 @@ void SV_ShutdownGameProgs( void ) {
 	VM_Free( gvm );
 	gvm = NULL;
 	FS_VM_CloseFiles( H_QAGAME );
+
+	CM_ClearMap();
 }
 
 

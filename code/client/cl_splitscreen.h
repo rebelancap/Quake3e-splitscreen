@@ -155,6 +155,7 @@ qboolean CL_SplitSkipUserinfo( const char *info );	// player 1's update is uncha
 // lifecycle hooks
 void	CL_SplitShutdownCGames( void );
 void	CL_SplitCGameShutdown( void );
+qboolean CL_SplitAnyCGame( void );
 void	CL_SplitMapLoading( void );
 void	CL_SplitRequestDrop( int ctxNum, const char *reason );
 qboolean CL_SplitGameCommand( void );

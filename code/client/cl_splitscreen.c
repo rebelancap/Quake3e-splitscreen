@@ -1718,12 +1718,12 @@ load or vid_restart.
 static void CL_SplitStartCGame( void ) {
 	int before, cost;
 
+	cl_splitInPlaceInit++;	// before the shutdown: it keeps the collision map
 	if ( cgvm ) {
 		CL_ShutdownCGame();
 	}
 
 	before = Hunk_MemoryRemaining();
-	cl_splitInPlaceInit++;
 	cls.cgameStarted = qtrue;
 	CL_InitCGame();
 	cl_splitInPlaceInit--;
@@ -1762,6 +1762,26 @@ static int CL_SplitCgameCost( void ) {
 
 static qboolean CL_SplitHunkHeadroom( int starts ) {
 	return ( Hunk_MemoryRemaining() >= starts * CL_SplitCgameCost() + SPLIT_HUNK_MARGIN ) ? qtrue : qfalse;
+}
+
+
+/*
+==================
+CL_SplitAnyCGame
+
+Some local player's cgame is still up (CL_ShutdownCGame: the collision
+map they share is cleared with the last one).
+==================
+*/
+qboolean CL_SplitAnyCGame( void ) {
+	int i;
+
+	for ( i = 0; i < MAX_SPLITVIEW; i++ ) {
+		if ( clx[ i ] && clx[ i ]->cgameVM ) {
+			return qtrue;
+		}
+	}
+	return qfalse;
 }
 
 

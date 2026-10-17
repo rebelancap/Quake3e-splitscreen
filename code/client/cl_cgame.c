@@ -412,6 +412,12 @@ void CL_ShutdownCGame( void ) {
 		// H_CGAME handles are shared by all local players' cgames
 		FS_VM_CloseFiles( H_CGAME );
 	}
+
+	// the collision map is shared by all local players' cgames: it goes
+	// with the last one, and stays for a cgame restarting in place
+	if ( !com_sv_running->integer && !cl_splitInPlaceInit && !CL_SplitAnyCGame() ) {
+		CM_ClearMap();
+	}
 }
 
 
