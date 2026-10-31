@@ -2,9 +2,16 @@
 
 ## Current state
 
-**1.0.2 prepared 2026-10-17 (R29, upstream sync; not yet pushed/tagged):**
-branch `sync-upstream-2026-10-14` = `main` + merge of ec-/Quake3e `main`
-@ `3173cef0` (2026-10-14) + VERSION 1.0.2 + CHANGELOG `## 1.0.2`. No
+**1.0.2 published 2026-10-31:**
+https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.2
+(GitHub Actions run 41232352051 on tag `v1.0.2`, all four jobs green;
+Linux tar.gz + Windows zip attached, body = the 1.0.2 CHANGELOG section).
+`main` = `3b851f3b` + this STATUS commit. Upstream had nothing newer than
+`3173cef0` on 2026-10-31. 1.0.2 (stamped `3b851f3b`) is installed in the
+maintainer's game folder (1.0.1 copy in `work/installed-backup/`). Further
+work on `main` continues as `1.0.2.N` dev builds. Prepared 2026-10-17 (R29,
+upstream sync): merge of ec-/Quake3e `main` @ `3173cef0` (2026-10-14) +
+VERSION 1.0.2 + CHANGELOG `## 1.0.2`. No
 splitscreen feature change; upstream brought the hunk memory rework
 (`ec431ef9`: per-bank `Hunk_Clear(h_low|h_high)`, `CL_ClearMemory` gone,
 `CM_ClearMap` in `CL_ShutdownCGame`) plus four small fixes. Our adaptation:
@@ -12,8 +19,7 @@ splitscreen feature change; upstream brought the hunk memory rework
 runs, no other local cgame is up (`CL_SplitAnyCGame`) and no cgame is
 restarting in place (`CL_SplitStartCGame` now raises `cl_splitInPlaceInit`
 before the shutdown); `hunk_generation` still bumps on every hunk clear.
-R28 runtime pass green (Last round). Pending: merge to `main`, tag
-`v1.0.2`, push (maintainer).
+R28 runtime pass green (Last round).
 
 **1.0.1 published 2026-10-15:**
 https://github.com/rebelancap/Quake3e-splitscreen/releases/tag/v1.0.1
@@ -1980,13 +1986,7 @@ Earlier rounds' details: `git show d0aa2376:STATUS.md` (R12) and older.
 
 ## Next steps
 
-00. **Ship 1.0.2 (upstream sync, R29):** `git checkout main && git merge
-   --ff-only sync-upstream-2026-10-14 && git tag v1.0.2 && git push origin
-   main v1.0.2` (maintainer's credentials; `release.yml` builds and attaches
-   from the tag with the `## 1.0.2` CHANGELOG section as body). Then copy
-   `build\Release\quake3e-vulkan-ss.x64.exe` + `BUILD-INFO.txt` (1.0.2) into
-   the maintainer's game folder (1.0.1 copy to `work/installed-backup/`).
-   Maintainer's one check: a UrT game with 2-3 pads, join/leave a player
+00. **1.0.2 is published and installed** (2026-10-31). Maintainer's one check: a UrT game with 2-3 pads, join/leave a player
    mid-game and change the layout -- everyone keeps walking on the map
    (collision map kept), then `vid_restart` and a map change.
 00a. **3-player map-change freeze (pre-existing, found R29):** 3 local
@@ -2962,12 +2962,10 @@ Defaults below are being taken; full list in design doc 11.
 
 ## Live claims
 
-- **R29 (2026-10-17):** no game/server process running (executor killed
-  its runs; `tasklist` clean). Branch `sync-upstream-2026-10-14` holds the
-  merge, **not yet merged to `main`, not tagged, not pushed** (00). The
-  maintainer's game folder still runs 1.0.1. `build\Release` = 1.0.2
-  (stamped `38ed1b64-dirty`, built before the merge commit). Test homes
-  `work/q3test`, `work/urttest` restored.
+- **R29 (2026-10-31):** none live. No game process running. `main` and tag
+  `v1.0.2` pushed, release published; sync branch deleted. Maintainer's
+  game folder: exe + `BUILD-INFO.txt` = 1.0.2 (`3b851f3b`), 1.0.1 copy in
+  `work/installed-backup/`. Clean tree.
 - **R28 (2026-10-15):** none live. No game process running (the lead killed
   its own hung boot run, pid 24444). `main` and tag `v1.0.1` pushed, release
   published. Maintainer's
